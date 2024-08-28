@@ -11,5 +11,6 @@ thiserror = "1.0.63"
 directories = "5.0.1"
 argon2 = "0.5.3"
 chacha20poly1305 = "0.10.1"
-nanosql = { version = "0.7.0", features = ["chrono"] }
-ratatui = "0.28.0"
+nanosql = { version = "0.9.1", features = ["chrono"] }
+ratatui = "0.28.1"
+tui-textarea = "0.6.1"

@@ -1,14 +1,17 @@
 #![deny(unsafe_code)]
 
+use std::ops::ControlFlow;
 use std::time::Duration;
 use directories::ProjectDirs;
 use ratatui::{
     Frame,
+    layout::Rect,
+    widgets::{Paragraph, block::{Block, BorderType}},
     crossterm::{
         event::{self, Event, KeyEventKind, KeyCode},
     },
-    widgets::{Block, Paragraph},
 };
+use tui_textarea::{TextArea, Input};
 use crate::{
     db::{Database, Item},
     screen::ScreenGuard,
@@ -51,6 +54,7 @@ impl App {
 struct State {
     db: Database,
     is_running: bool,
+    new_item: Option<NewItemState>,
     items: Vec<Item>,
 }
 
@@ -60,15 +64,41 @@ impl State {
         Ok(State {
             db,
             is_running: true,
+            new_item: None,
             items,
         })
     }
 
     fn draw(&self, frame: &mut Frame) {
+        let help_height = 3;
+        let table_area = {
+            let mut area = frame.area();
+            area.height -= help_height;
+            area
+        };
+        let help_area = Rect {
+            x: table_area.x,
+            y: table_area.y + table_area.height,
+            width: table_area.width,
+            height: help_height,
+        };
         frame.render_widget(
-            Paragraph::new("Hello World!").block(Block::bordered().title("Greeting")),
-            frame.area(),
+            Paragraph::new("Hello World!").block(
+                Block::bordered().title(" Secrets ").border_type(BorderType::Rounded)
+            ),
+            table_area,
         );
+        frame.render_widget(
+            Paragraph::new(
+                " [C]opy to clipboard    [V]iew secret    [N]ew item    [D]elete    [Q]uit"
+            ).block(
+                Block::bordered().title(" Actions ").border_type(BorderType::Rounded)
+            ),
+            help_area,
+        );
+        if let Some(new_item) = self.new_item.as_ref() {
+            frame.render_widget(&new_item.text_area, help_area);
+        }
     }
 
     /// Returns `Ok(true)` if the state needs to be synced due to the handled events.
@@ -76,20 +106,68 @@ impl State {
         if !event::poll(Duration::from_millis(50))? {
             return Ok(false);
         }
+        let event = event::read()?;
+        let event = match self.handle_text_input(event) {
+            ControlFlow::Break(redraw) => return Ok(redraw),
+            ControlFlow::Continue(event) => event,
+        };
 
-        let Event::Key(key) = event::read()? else { return Ok(false) };
+        let Event::Key(key) = event else {
+            return Ok(false)
+        };
 
-        if (key.kind, key.code) == (KeyEventKind::Press, KeyCode::Char('q')) {
-            self.is_running = false;
+        if key.kind != KeyEventKind::Press {
+            return Ok(false)
+        };
+
+        Ok(match key.code {
+            KeyCode::Char('n' | 'N') => {
+                self.new_item = Some(NewItemState::default());
+                true
+            }
+            KeyCode::Char('q' | 'Q') => {
+                self.is_running = false;
+                false
+            }
+            KeyCode::Esc => {
+                self.new_item = None;
+                true
+            }
+            _ => false
+        })
+    }
+
+    fn handle_text_input(&mut self, event: Event) -> ControlFlow<bool, Event> {
+        // if the input text area is not open, ignore the event and give it back right away
+        let Some(new_item) = self.new_item.as_mut() else {
+            return ControlFlow::Continue(event);
+        };
+
+        match event {
+            Event::Key(evt) if evt.code == KeyCode::Esc => return ControlFlow::Continue(event),
+            // Event::Key(KeyCode::Enter) => {
+                // TODO: store the text just entered
+            // }
+            _ => {}
         }
 
-        Ok(false)
+        new_item.text_area.input(event);
+
+        ControlFlow::Break(true)
     }
 
     fn sync_data(&mut self) -> Result<()> {
         self.items = self.db.list_items()?;
         Ok(())
     }
+}
+
+#[derive(Default, Debug)]
+struct NewItemState {
+    label: String,
+    description: String,
+    secret: String,
+    text_area: TextArea<'static>,
 }
 
 fn main() -> Result<()> {

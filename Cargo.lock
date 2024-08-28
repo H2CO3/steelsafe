@@ -574,9 +574,9 @@ dependencies = [
 
 [[package]]
 name = "nanosql"
-version = "0.7.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c41a9f35eb35822e0cd23c81f099435e75166920d33199c63a7df6e571d79565"
+checksum = "218521e9fc53f589e56a0f5e23f8da8039bdda3c8a83af638c1fd754e360cef2"
 dependencies = [
  "chrono",
  "nanosql_macros",
@@ -586,9 +586,9 @@ dependencies = [
 
 [[package]]
 name = "nanosql_macros"
-version = "0.7.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baeff3276057a4639e6d6c37b311db659aa466d8cd0ec0df4426bf0eac64ddd0"
+checksum = "cd6c1956a5ab019df454cffc4c59b14d5bb360b9880ee5f3bd67dae699e39d34"
 dependencies = [
  "deluxe",
  "heck 0.5.0",
@@ -721,9 +721,9 @@ dependencies = [
 
 [[package]]
 name = "ratatui"
-version = "0.28.0"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ba6a365afbe5615999275bea2446b970b10a41102500e27ce7678d50d978303"
+checksum = "fdef7f9be5c0122f890d58bdf4d964349ba6a6161f705907526d891efabba57d"
 dependencies = [
  "bitflags",
  "cassowary",
@@ -873,6 +873,7 @@ dependencies = [
  "nanosql",
  "ratatui",
  "thiserror",
+ "tui-textarea",
 ]
 
 [[package]]
@@ -955,6 +956,17 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "winnow",
+]
+
+[[package]]
+name = "tui-textarea"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29c07084342a575cea919eea996b9658a358c800b03d435df581c1d7c60e065a"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "unicode-width",
 ]
 
 [[package]]
