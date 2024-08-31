@@ -6,16 +6,19 @@ use directories::ProjectDirs;
 use nanosql::Utc;
 use ratatui::{
     Frame,
-    layout::{Rect, Offset},
+    layout::{Rect, Offset, Constraint},
     style::{Style, Color, Modifier},
-    widgets::{Paragraph, block::{Block, BorderType}},
+    widgets::{
+        Clear, Table, TableState, Row, Cell, Paragraph,
+        block::{Block, BorderType},
+    },
     crossterm::{
         event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
     },
 };
 use tui_textarea::{TextArea, Input};
 use crate::{
-    db::{Database, Item, AddItemInput},
+    db::{Database, Item, DisplayItem, AddItemInput},
     screen::ScreenGuard,
     error::{Error, Result},
 };
@@ -43,8 +46,8 @@ impl App {
         while self.state.is_running {
             self.screen.draw(|frame| self.state.draw(frame))?;
 
-            if self.state.handle_events()? {
-                self.state.sync_data()?;
+            if let Err(error) = self.state.handle_events() {
+                self.state.popup_error = Some(error);
             }
         }
 
@@ -58,22 +61,28 @@ struct State {
     is_running: bool,
     new_item: Option<NewItemState>,
     popup_error: Option<Error>,
-    items: Vec<Item>,
+    items: Vec<DisplayItem>,
+    table_state: TableState,
 }
 
 impl State {
     fn new(db: Database) -> Result<Self> {
-        let items = db.list_items()?;
+        let items = db.list_items_for_display()?;
+
+        let table_state = TableState::new()
+            .with_selected(if items.is_empty() { None } else { Some(0) });
+
         Ok(State {
             db,
             is_running: true,
             new_item: None,
             popup_error: None,
             items,
+            table_state,
         })
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let help_height = 3;
         let table_area = {
             let mut area = frame.area();
@@ -86,12 +95,23 @@ impl State {
             width: table_area.width,
             height: help_height,
         };
-        frame.render_widget(
-            Paragraph::new("Hello World!").block(
-                Block::bordered().title(" Secrets ").border_type(BorderType::Rounded)
-            ),
-            table_area,
+        let table = Table::new(
+            self.items.iter().map(|item| {
+                Row::new([
+                    item.label.clone(),
+                    item.account.clone().unwrap_or_default(),
+                    item.last_modified_at.format("%F %T").to_string(),
+                ])
+            }),
+            [Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Min(24)]
+        ).header(
+            Row::new(["Title", "Username or account", "Modified at (UTC)"])
+        ).highlight_style(
+            Modifier::REVERSED
+        ).block(
+            Block::bordered().title(" Secrets ").border_type(BorderType::Rounded)
         );
+        frame.render_stateful_widget(table, table_area, &mut self.table_state);
         frame.render_widget(
             Paragraph::new(
                 " [C]opy to clipboard    [V]iew secret    [N]ew item    [D]elete    [Q]uit"
@@ -121,6 +141,7 @@ impl State {
                 .centered()
                 .block(block);
 
+            frame.render_widget(Clear, dialog_area);
             frame.render_widget(msg, dialog_area);
         } else if let Some(new_item) = self.new_item.as_ref() {
             let mut dialog_area = table_area;
@@ -148,9 +169,11 @@ impl State {
                 ))
                 .border_type(BorderType::Rounded);
 
+            frame.render_widget(Clear, dialog_area);
             frame.render_widget(&outer, dialog_area);
 
             dialog_area.width -= 2;
+
             let label_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 1 });
             let desc_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 4 });
             let secret_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 7 });
@@ -163,46 +186,57 @@ impl State {
         }
     }
 
-    /// Returns `Ok(true)` if the state needs to be synced due to the handled events.
-    fn handle_events(&mut self) -> Result<bool> {
+    fn handle_events(&mut self) -> Result<()> {
         if !event::poll(Duration::from_millis(50))? {
-            return Ok(false);
+            return Ok(());
         }
         let event = event::read()?;
 
-        let event = match self.handle_error_input(event) {
-            ControlFlow::Break(reload) => return Ok(reload),
+        let event = match self.handle_error_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
-        let event = match self.handle_text_input(event) {
-            ControlFlow::Break(reload) => return Ok(reload),
+        let event = match self.handle_text_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
 
         let Event::Key(key) = event else {
-            return Ok(false);
+            return Ok(());
         };
 
         if key.kind != KeyEventKind::Press {
-            return Ok(false);
+            return Ok(());
         };
 
-        Ok(match key.code {
+        match key.code {
+            KeyCode::Up => {
+                self.table_state.select_previous();
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.table_state.select_next();
+            }
+            KeyCode::Char('1') => {
+                self.table_state.select_first();
+            }
+            KeyCode::Char('0') => {
+                self.table_state.select_last();
+            }
             KeyCode::Char('n' | 'N') => {
                 self.new_item = Some(NewItemState::default());
-                true
             }
             KeyCode::Char('q' | 'Q') => {
                 self.is_running = false;
-                false
             }
-            _ => false
-        })
+            _ => {}
+        }
+
+        Ok(())
     }
 
-    fn handle_error_input(&mut self, event: Event) -> ControlFlow<bool, Event> {
+    fn handle_error_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         if self.popup_error.is_none() {
-            return ControlFlow::Continue(event);
+            return Ok(ControlFlow::Continue(event));
         }
 
         match event {
@@ -215,55 +249,62 @@ impl State {
             _ => {}
         }
 
-        ControlFlow::Break(false)
+        Ok(ControlFlow::Break(()))
     }
 
-    fn handle_text_input(&mut self, event: Event) -> ControlFlow<bool, Event> {
+    fn handle_text_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         // if the input text area is not open, ignore the event and give it back right away
         let Some(new_item) = self.new_item.as_mut() else {
-            return ControlFlow::Continue(event);
+            return Ok(ControlFlow::Continue(event));
         };
 
         match event {
             Event::Key(evt) => match evt.code {
                 KeyCode::Esc => {
                     self.new_item = None;
-                    return ControlFlow::Break(false);
                 }
-                KeyCode::Tab | KeyCode::Down => {
+                KeyCode::Down | KeyCode::Tab => {
                     new_item.cycle_forward();
-                    return ControlFlow::Break(false);
                 }
                 KeyCode::Up => {
                     new_item.cycle_back();
-                    return ControlFlow::Break(false);
                 }
                 KeyCode::Enter => {
-                    // TODO(H2CO3): select the newly-added item in the table
-                    self.popup_error = new_item.add_item(&self.db).err();
-                    self.new_item = None;
-                    return ControlFlow::Break(true);
+                    let result = new_item.add_item(&self.db);
+                    self.new_item = None; // close dialog even if an error occurred
+
+                    let added = result?;
+                    self.sync_data()?;
+
+                    if let Some((idx, _item)) = self.items
+                        .iter()
+                        .enumerate()
+                        .rev() // the new item will _usually_ be the last one
+                        .find(|(_idx, item)| item.uid == added.uid)
+                    {
+                        self.table_state.select(Some(idx));
+                    }
                 }
                 KeyCode::Char('h' | 'H') if evt.modifiers.contains(KeyModifiers::CONTROL) => {
                     new_item.toggle_show_secret();
-                    return ControlFlow::Break(false);
                 }
                 KeyCode::Char('e' | 'E') if evt.modifiers.contains(KeyModifiers::CONTROL) => {
                     new_item.toggle_show_enc_pass();
-                    return ControlFlow::Break(false);
                 }
-                _ => {}
+                _ => {
+                    new_item.focused_text_area().input(event);
+                }
             },
-            _ => {}
+            _ => {
+                new_item.focused_text_area().input(event);
+            }
         }
 
-        new_item.focused_text_area().input(event);
-
-        ControlFlow::Break(false)
+        Ok(ControlFlow::Break(()))
     }
 
     fn sync_data(&mut self) -> Result<()> {
-        self.items = self.db.list_items()?;
+        self.items = self.db.list_items_for_display()?;
         Ok(())
     }
 }

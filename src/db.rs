@@ -25,8 +25,8 @@ impl Database {
         Ok(Database { connection })
     }
 
-    pub fn list_items(&self) -> Result<Vec<Item>> {
-        self.connection.select_all().map_err(Into::into)
+    pub fn list_items_for_display(&self) -> Result<Vec<DisplayItem>> {
+        self.connection.compile_invoke(ListItemsForDisplay, ()).map_err(Into::into)
     }
 
     pub fn add_item(&self, input: AddItemInput<'_>) -> Result<Item> {
@@ -68,4 +68,26 @@ pub struct AddItemInput<'p> {
     pub encrypted_secret: &'p [u8],
     pub kdf_salt: [u8; 16],
     pub auth_nonce: [u8; 12],
+}
+
+#[derive(Clone, Debug, ResultRecord)]
+pub struct DisplayItem {
+    pub uid: u64,
+    pub label: String,
+    pub account: Option<String>,
+    pub last_modified_at: DateTime<Utc>,
+}
+
+nanosql::define_query! {
+    ListItemsForDisplay<'p>: () => Vec<DisplayItem> {
+        r#"
+        SELECT
+            "item"."uid" AS "uid",
+            "item"."label" AS "label",
+            "item"."account" AS "account",
+            "item"."last_modified_at" AS "last_modified_at"
+        FROM "item"
+        ORDER BY "item"."uid";
+        "#
+    }
 }
