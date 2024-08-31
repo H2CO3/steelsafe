@@ -11,6 +11,14 @@ pub enum Error {
     ScreenAlreadyOpen,
     #[error("can't find database directory")]
     MissingDatabaseDir,
+    #[error("label is required and must be a single line")]
+    LabelRequired,
+    #[error("secret is required")]
+    SecretRequired,
+    #[error("encryption (master) password is required and must be a single line")]
+    EncryptionPasswordRequired,
+    #[error("account name must be a single line if specified")]
+    AccountNameSingleLine,
     #[error(transparent)]
     Io(#[from] IoError),
     #[error(transparent)]
