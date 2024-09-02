@@ -2,6 +2,9 @@
 
 use std::io::Error as IoError;
 use thiserror::Error;
+use argon2::Error as Argon2Error;
+use chacha20poly1305::Error as XChaCha20Poly1305Error;
+use crypto_common::InvalidLength;
 use nanosql::Error as SqlError;
 
 
@@ -23,6 +26,12 @@ pub enum Error {
     Io(#[from] IoError),
     #[error(transparent)]
     Db(#[from] SqlError),
+    #[error(transparent)]
+    Argon2(#[from] Argon2Error),
+    #[error(transparent)]
+    XChaCha20Poly1305(#[from] XChaCha20Poly1305Error),
+    #[error(transparent)]
+    InvalidLength(#[from] InvalidLength),
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;

@@ -1,29 +1,33 @@
 #![deny(unsafe_code)]
 
+use std::mem;
 use std::ops::ControlFlow;
 use std::time::Duration;
 use directories::ProjectDirs;
 use nanosql::Utc;
+use zeroize::Zeroizing;
 use ratatui::{
     Frame,
     layout::{Rect, Offset, Constraint},
-    style::{Style, Color, Modifier},
+    style::{Style, Modifier},
     widgets::{
-        Clear, Table, TableState, Row, Cell, Paragraph,
+        Clear, Table, TableState, Row, Paragraph,
         block::{Block, BorderType},
     },
     crossterm::{
         event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
     },
 };
-use tui_textarea::{TextArea, Input};
+use tui_textarea::TextArea;
 use crate::{
+    crypto::EncryptionInput,
     db::{Database, Item, DisplayItem, AddItemInput},
     screen::ScreenGuard,
     error::{Error, Result},
 };
 
 mod db;
+mod crypto;
 mod error;
 mod screen;
 
@@ -270,7 +274,7 @@ impl State {
                     new_item.cycle_back();
                 }
                 KeyCode::Enter => {
-                    let result = new_item.add_item(&self.db);
+                    let result = mem::take(new_item).add_item(&self.db);
                     self.new_item = None; // close dialog even if an error occurred
 
                     let added = result?;
@@ -395,7 +399,7 @@ impl NewItemState {
         self.set_show_enc_pass(!self.show_enc_pass);
     }
 
-    fn add_item(&self, db: &Database) -> Result<Item> {
+    fn add_item(self, db: &Database) -> Result<Item> {
         let label = match self.label.lines() {
             [line] if !line.is_empty() => line.trim(),
             _ => return Err(Error::LabelRequired),
@@ -405,25 +409,39 @@ impl NewItemState {
             [line] => if line.is_empty() { None } else { Some(line.trim()) },
             _ => return Err(Error::AccountNameSingleLine),
         };
-        let secret = match self.secret.lines() {
+
+        // Steal the contents of the secret and wrap it in a `Zeroizing`, so
+        // that it's cleared upon drop (even if an error occurs).
+        let secret_lines = Zeroizing::new(self.secret.into_lines());
+        let secret = match secret_lines.as_slice() {
             [] => return Err(Error::SecretRequired),
             [line] if line.is_empty() => return Err(Error::SecretRequired),
-            lines => lines.join("\n"),
+            lines => Zeroizing::new(lines.join("\n")),
         };
-        let enc_pass = match self.enc_pass.lines() {
-            [line] if !line.is_empty() => line,
+
+        // Do the same to the encryption password.
+        let mut enc_pass_lines = Zeroizing::new(self.enc_pass.into_lines());
+        let enc_pass = match enc_pass_lines.as_mut_slice() {
+            [line] if !line.is_empty() => Zeroizing::new(mem::take(line)),
             _ => return Err(Error::EncryptionPasswordRequired),
         };
-        let input = AddItemInput {
+
+        let encryption_input = EncryptionInput {
+            plaintext_secret: secret.as_bytes(),
+            label,
+            account,
+        };
+        let encryption_output = encryption_input.encrypt_and_authenticate(enc_pass.as_bytes())?;
+
+        db.add_item(AddItemInput {
             uid: nanosql::Null,
             label,
             account,
             last_modified_at: Utc::now(),
-            encrypted_secret: secret.as_bytes(),
-            kdf_salt: [0; 16],
-            auth_nonce: [0; 12],
-        };
-        db.add_item(input)
+            encrypted_secret: encryption_output.enc_secret.as_slice(),
+            kdf_salt: encryption_output.kdf_salt,
+            auth_nonce: encryption_output.auth_nonce,
+        })
     }
 }
 

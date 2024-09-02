@@ -54,7 +54,7 @@ pub struct Item {
     /// The salt for the key derivation function.
     pub kdf_salt: [u8; 16],
     /// The nonce for the authentication function.
-    pub auth_nonce: [u8; 12],
+    pub auth_nonce: [u8; 24],
 }
 
 #[derive(Clone, Param, InsertInput)]
@@ -67,7 +67,7 @@ pub struct AddItemInput<'p> {
     pub last_modified_at: DateTime<Utc>,
     pub encrypted_secret: &'p [u8],
     pub kdf_salt: [u8; 16],
-    pub auth_nonce: [u8; 12],
+    pub auth_nonce: [u8; 24],
 }
 
 #[derive(Clone, Debug, ResultRecord)]
