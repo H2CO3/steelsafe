@@ -63,6 +63,7 @@ impl App {
 struct State {
     db: Database,
     is_running: bool,
+    find: Option<FindItemState>,
     new_item: Option<NewItemState>,
     popup_error: Option<Error>,
     items: Vec<DisplayItem>,
@@ -71,7 +72,7 @@ struct State {
 
 impl State {
     fn new(db: Database) -> Result<Self> {
-        let items = db.list_items_for_display()?;
+        let items = db.list_items_for_display(None)?;
 
         let table_state = TableState::new()
             .with_selected(if items.is_empty() { None } else { Some(0) });
@@ -79,6 +80,7 @@ impl State {
         Ok(State {
             db,
             is_running: true,
+            find: None,
             new_item: None,
             popup_error: None,
             items,
@@ -116,14 +118,26 @@ impl State {
             Block::bordered().title(" Secrets ").border_type(BorderType::Rounded)
         );
         frame.render_stateful_widget(table, table_area, &mut self.table_state);
-        frame.render_widget(
-            Paragraph::new(
-                " [C]opy to clipboard    [V]iew secret    [N]ew item    [D]elete    [Q]uit"
-            ).block(
-                Block::bordered().title(" Actions ").border_type(BorderType::Rounded)
-            ),
-            help_area,
-        );
+
+        if let Some(find_state) = self.find.as_mut() {
+            let block = find_state.search_term.block().cloned().unwrap_or_default();
+            let block = if find_state.has_focus {
+                block.style(Style::default().add_modifier(Modifier::BOLD))
+            } else {
+                block.style(Style::default())
+            };
+            find_state.search_term.set_block(block);
+            frame.render_widget(&find_state.search_term, help_area);
+        } else {
+            frame.render_widget(
+                Paragraph::new(
+                    " [C]opy secret    [V]iew details    [F]ind    [N]ew item    [Q]uit"
+                ).block(
+                    Block::bordered().title(" Actions ").border_type(BorderType::Rounded)
+                ),
+                help_area,
+            );
+        }
 
         if let Some(error) = self.popup_error.as_ref() {
             let mut dialog_area = table_area;
@@ -168,7 +182,7 @@ impl State {
                     if new_item.show_secret { "Hide" } else { "Show" }
                 ))
                 .title_bottom(format!(
-                    " <^E> {} enc passwd ",
+                    " <^E> {} encr passwd ",
                     if new_item.show_enc_pass { "Hide" } else { "Show" }
                 ))
                 .border_type(BorderType::Rounded);
@@ -200,7 +214,11 @@ impl State {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
-        let event = match self.handle_text_input(event)? {
+        let event = match self.handle_find_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
+            ControlFlow::Continue(event) => event,
+        };
+        let event = match self.handle_new_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
@@ -225,6 +243,15 @@ impl State {
             }
             KeyCode::Char('0') => {
                 self.table_state.select_last();
+            }
+            KeyCode::Char('f' | 'F' | '/') => {
+                // if we are already in find mode, do NOT reset
+                // the search term, just give back focus.
+                if let Some(find_state) = self.find.as_mut() {
+                    find_state.has_focus = true;
+                } else {
+                    self.find = Some(FindItemState::default());
+                }
             }
             KeyCode::Char('n' | 'N') => {
                 self.new_item = Some(NewItemState::default());
@@ -256,7 +283,34 @@ impl State {
         Ok(ControlFlow::Break(()))
     }
 
-    fn handle_text_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
+    fn handle_find_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
+        let Some(find_state) = self.find.as_mut() else {
+            return Ok(ControlFlow::Continue(event));
+        };
+
+        match event {
+            Event::Key(evt) => match evt.code {
+                KeyCode::Esc => {
+                    self.find = None;
+                    self.sync_data(true)?;
+                    Ok(ControlFlow::Break(()))
+                }
+                KeyCode::Enter if find_state.has_focus => {
+                    find_state.has_focus = false;
+                    Ok(ControlFlow::Break(()))
+                }
+                _ if find_state.has_focus => {
+                    find_state.search_term.input(event);
+                    self.sync_data(true)?;
+                    Ok(ControlFlow::Break(()))
+                }
+                _ => Ok(ControlFlow::Continue(event))
+            }
+            _ => Ok(ControlFlow::Continue(event))
+        }
+    }
+
+    fn handle_new_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         // if the input text area is not open, ignore the event and give it back right away
         let Some(new_item) = self.new_item.as_mut() else {
             return Ok(ControlFlow::Continue(event));
@@ -278,7 +332,7 @@ impl State {
                     self.new_item = None; // close dialog even if an error occurred
 
                     let added = result?;
-                    self.sync_data()?;
+                    self.sync_data(false)?;
 
                     if let Some((idx, _item)) = self.items
                         .iter()
@@ -307,9 +361,49 @@ impl State {
         Ok(ControlFlow::Break(()))
     }
 
-    fn sync_data(&mut self) -> Result<()> {
-        self.items = self.db.list_items_for_display()?;
+    fn sync_data(&mut self, adjust_selection: bool) -> Result<()> {
+        let search_term = self.find.as_ref().and_then(|find_state| {
+            find_state
+                .search_term
+                .lines()
+                .first()
+                .map(|line| format!("%{}%", line.trim()))
+        });
+        self.items = self.db.list_items_for_display(search_term.as_deref())?;
+
+        #[allow(unused_parens)]
+        if (
+            adjust_selection
+            &&
+            !self.items.is_empty()
+            &&
+            !self.table_state.selected().is_some_and(|idx| idx < self.items.len())
+        ) {
+            self.table_state.select_last();
+        }
+
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct FindItemState {
+    search_term: TextArea<'static>,
+    has_focus: bool,
+}
+
+impl Default for FindItemState {
+    fn default() -> Self {
+        let mut search_term = TextArea::default();
+
+        search_term.set_block(
+            Block::bordered().title(" Search term ").border_type(BorderType::Rounded)
+        );
+
+        FindItemState {
+            search_term,
+            has_focus: true,
+        }
     }
 }
 

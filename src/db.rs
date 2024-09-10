@@ -25,8 +25,8 @@ impl Database {
         Ok(Database { connection })
     }
 
-    pub fn list_items_for_display(&self) -> Result<Vec<DisplayItem>> {
-        self.connection.compile_invoke(ListItemsForDisplay, ()).map_err(Into::into)
+    pub fn list_items_for_display(&self, search_term: Option<&str>) -> Result<Vec<DisplayItem>> {
+        self.connection.compile_invoke(ListItemsForDisplay, search_term).map_err(Into::into)
     }
 
     pub fn add_item(&self, input: AddItemInput<'_>) -> Result<Item> {
@@ -79,7 +79,9 @@ pub struct DisplayItem {
 }
 
 nanosql::define_query! {
-    ListItemsForDisplay<'p>: () => Vec<DisplayItem> {
+    /// The optional parameter is a search/filter term. It works with SQLite `LIKE` syntax.
+    /// If not provided, no filtering will be performed, and all items will be returned.
+    ListItemsForDisplay<'p>: Option<&'p str> => Vec<DisplayItem> {
         r#"
         SELECT
             "item"."uid" AS "uid",
@@ -87,6 +89,7 @@ nanosql::define_query! {
             "item"."account" AS "account",
             "item"."last_modified_at" AS "last_modified_at"
         FROM "item"
+        WHERE ?1 IS NULL OR "item"."label" LIKE ?1 OR "item"."account" LIKE ?1
         ORDER BY "item"."uid";
         "#
     }
