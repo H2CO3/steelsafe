@@ -3,6 +3,7 @@
 use std::io::Error as IoError;
 use std::str::Utf8Error;
 use thiserror::Error;
+use serde_json::Error as JsonError;
 use argon2::Error as Argon2Error;
 use chacha20poly1305::Error as XChaCha20Poly1305Error;
 use block_padding::UnpadError;
@@ -31,6 +32,8 @@ pub enum Error {
     Io(#[from] IoError),
     #[error("Secret is not valid UTF-8: {0}")]
     Utf8(#[from] Utf8Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] JsonError),
     #[error("Database error: {0}")]
     Db(#[from] SqlError),
     #[error("Password hashing error: {0}")]

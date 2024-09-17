@@ -1,4 +1,5 @@
-use serde_json::json;
+use serde::Serialize;
+use chrono::{DateTime, Utc};
 use zeroize::Zeroizing;
 use block_padding::{RawPadding, Iso7816};
 use crypto_common::typenum::Unsigned;
@@ -10,6 +11,15 @@ use crate::Result;
 pub use argon2::RECOMMENDED_SALT_LEN;
 pub const NONCE_LEN: usize = 24;
 pub const PADDING_BLOCK_SIZE: usize = 256;
+
+/// Fields are in alphabetical order, so that round-tripping through `Value`
+/// results in bitwise-identical JSON. (This is a precautionary measure.)
+#[derive(Clone, Copy, Debug, Serialize)]
+struct AdditionalData<'a> {
+    account: Option<&'a str>,
+    label: &'a str,
+    last_modified_at: DateTime<Utc>,
+}
 
 #[derive(Clone, Debug)]
 pub struct EncryptionOutput {
@@ -26,6 +36,7 @@ pub struct EncryptionInput<'a> {
     pub plaintext_secret: &'a [u8],
     pub label: &'a str,
     pub account: Option<&'a str>,
+    pub last_modified_at: DateTime<Utc>,
 }
 
 impl EncryptionInput<'_> {
@@ -44,11 +55,12 @@ impl EncryptionInput<'_> {
         Iso7816::raw_pad(padded_secret.as_mut_slice(), unpadded_secret.len());
 
         // Create the additional authenticated data.
-        let additional_data_val = json!({
-            "label": self.label,
-            "account": self.account,
-        });
-        let additional_data_str = additional_data_val.to_string();
+        let additional_data = AdditionalData {
+            account: self.account,
+            label: self.label,
+            last_modified_at: self.last_modified_at,
+        };
+        let additional_data_str = serde_json::to_string(&additional_data)?;
 
         // Generate random salt and nonce. `rand::random()` uses a CSPRNG.
         let kdf_salt: [u8; RECOMMENDED_SALT_LEN] = rand::random();
@@ -80,12 +92,14 @@ impl EncryptionInput<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct DecryptionInput<'a> {
     pub encrypted_secret: &'a [u8],
     pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
     pub auth_nonce: [u8; NONCE_LEN],
     pub label: &'a str,
     pub account: Option<&'a str>,
+    pub last_modified_at: DateTime<Utc>,
 }
 
 impl DecryptionInput<'_> {
@@ -93,11 +107,12 @@ impl DecryptionInput<'_> {
         // Re-create the additional authenticated data. This helps detect when
         // the displayed label or account have been tampered with in the database.
         // This **must** be bitwise identical to the data used during encryption.
-        let additional_data_val = json!({
-            "label": self.label,
-            "account": self.account,
-        });
-        let additional_data_str = additional_data_val.to_string();
+        let additional_data = AdditionalData {
+            account: self.account,
+            label: self.label,
+            last_modified_at: self.last_modified_at,
+        };
+        let additional_data_str = serde_json::to_string(&additional_data)?;
 
         // Create KDF context.
         // This MUST use the same parameters as hashing during encryption.

@@ -1,10 +1,10 @@
 //! Describes and implements the password database.
 
 use std::path::Path;
+use chrono::{DateTime, Utc};
 use nanosql::{
-    Connection, ConnectionExt,
+    Connection, ConnectionExt, Null,
     Table, Param, ResultRecord, InsertInput,
-    DateTime, Utc, Null,
 };
 use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
 use crate::error::Result;

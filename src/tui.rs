@@ -417,6 +417,7 @@ impl State {
             auth_nonce: item.auth_nonce,
             label: item.label.as_str(),
             account: item.account.as_deref(),
+            last_modified_at: item.last_modified_at,
         };
         let plaintext_secret = input.decrypt_and_verify(enc_pass.as_bytes())?;
         let secret_str = std::str::from_utf8(&plaintext_secret)?;
@@ -618,14 +619,15 @@ impl NewItemState {
             plaintext_secret: secret.as_bytes(),
             label,
             account,
+            last_modified_at: Utc::now(),
         };
         let encryption_output = encryption_input.encrypt_and_authenticate(enc_pass.as_bytes())?;
 
         db.add_item(AddItemInput {
-            uid: nanosql::Null,
+            uid: nanosql::Null, // generate fresh unique ID
             label,
             account,
-            last_modified_at: Utc::now(),
+            last_modified_at: encryption_input.last_modified_at,
             encrypted_secret: encryption_output.enc_secret.as_slice(),
             kdf_salt: encryption_output.kdf_salt,
             auth_nonce: encryption_output.auth_nonce,
