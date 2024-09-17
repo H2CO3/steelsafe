@@ -6,6 +6,7 @@ use nanosql::{
     Table, Param, ResultRecord, InsertInput,
     DateTime, Utc, Null,
 };
+use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
 use crate::error::Result;
 
 
@@ -56,9 +57,9 @@ pub struct Item {
     /// Also contains a copy of the other fields for the purpose of tamper protection.
     pub encrypted_secret: Vec<u8>,
     /// The salt for the key derivation function.
-    pub kdf_salt: [u8; 16],
+    pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
     /// The nonce for the authentication function.
-    pub auth_nonce: [u8; 24],
+    pub auth_nonce: [u8; NONCE_LEN],
 }
 
 #[derive(Clone, Param, InsertInput)]
@@ -70,8 +71,8 @@ pub struct AddItemInput<'p> {
     pub account: Option<&'p str>,
     pub last_modified_at: DateTime<Utc>,
     pub encrypted_secret: &'p [u8],
-    pub kdf_salt: [u8; 16],
-    pub auth_nonce: [u8; 24],
+    pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
+    pub auth_nonce: [u8; NONCE_LEN],
 }
 
 #[derive(Clone, Debug, ResultRecord)]

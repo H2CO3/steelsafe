@@ -2,12 +2,14 @@ use serde_json::json;
 use zeroize::Zeroizing;
 use block_padding::{RawPadding, Iso7816};
 use crypto_common::typenum::Unsigned;
-use argon2::{Argon2, RECOMMENDED_SALT_LEN};
+use argon2::Argon2;
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload, KeySizeUser}};
 use crate::Result;
 
 
-const PADDING_BLOCK_SIZE: usize = 256;
+pub use argon2::RECOMMENDED_SALT_LEN;
+pub const NONCE_LEN: usize = 24;
+pub const PADDING_BLOCK_SIZE: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct EncryptionOutput {
@@ -16,7 +18,7 @@ pub struct EncryptionOutput {
     /// The randomly-generated salt, used for seeding the KDF.
     pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
     /// The randomly-generated nonce, used for initializing the AEAD hash.
-    pub auth_nonce: [u8; 24],
+    pub auth_nonce: [u8; NONCE_LEN],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +52,7 @@ impl EncryptionInput<'_> {
 
         // Generate random salt and nonce. `rand::random()` uses a CSPRNG.
         let kdf_salt: [u8; RECOMMENDED_SALT_LEN] = rand::random();
-        let auth_nonce: [u8; 24] = rand::random();
+        let auth_nonce: [u8; NONCE_LEN] = rand::random();
 
         // Create KDF context.
         // This uses recommended parameters (19 MB memory, 2 rounds, 1 degree of parallelism).
@@ -75,5 +77,51 @@ impl EncryptionInput<'_> {
             kdf_salt,
             auth_nonce,
         })
+    }
+}
+
+pub struct DecryptionInput<'a> {
+    pub encrypted_secret: &'a [u8],
+    pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
+    pub auth_nonce: [u8; NONCE_LEN],
+    pub label: &'a str,
+    pub account: Option<&'a str>,
+}
+
+impl DecryptionInput<'_> {
+    pub fn decrypt_and_verify(self, decryption_password: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        // Re-create the additional authenticated data. This helps detect when
+        // the displayed label or account have been tampered with in the database.
+        // This **must** be bitwise identical to the data used during encryption.
+        let additional_data_val = json!({
+            "label": self.label,
+            "account": self.account,
+        });
+        let additional_data_str = additional_data_val.to_string();
+
+        // Create KDF context.
+        // This MUST use the same parameters as hashing during encryption.
+        let hasher = Argon2::default();
+
+        // The actual encryption key is cleared (overwritten with all 0s) upon drop.
+        let mut key = Zeroizing::new([0_u8; <XChaCha20Poly1305 as KeySizeUser>::KeySize::USIZE]);
+        hasher.hash_password_into(decryption_password, &self.kdf_salt, &mut *key)?;
+
+        // Create decryption and verification context.
+        let aead = XChaCha20Poly1305::new_from_slice(key.as_slice())?;
+
+        // Actually perform the decryption and verification.
+        let payload = Payload {
+            msg: self.encrypted_secret,
+            aad: additional_data_str.as_bytes(),
+        };
+        let plaintext_secret = aead.decrypt(<_>::from(&self.auth_nonce), payload)?;
+        let mut plaintext_secret = Zeroizing::new(plaintext_secret);
+
+        // Un-pad the decrypted plaintext
+        let unpadded_len = Iso7816::raw_unpad(plaintext_secret.as_slice())?.len();
+        plaintext_secret.truncate(unpadded_len);
+
+        Ok(plaintext_secret)
     }
 }

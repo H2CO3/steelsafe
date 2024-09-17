@@ -1,8 +1,9 @@
 //! The bulk of the actual user interface logic.
 
 use std::mem;
-use std::ops::ControlFlow;
+use std::ops::{ControlFlow, Deref, DerefMut};
 use std::time::Duration;
+use std::fmt::{self, Debug, Formatter};
 use nanosql::Utc;
 use zeroize::Zeroizing;
 use ratatui::{
@@ -18,8 +19,9 @@ use ratatui::{
     },
 };
 use tui_textarea::TextArea;
+use arboard::Clipboard;
 use crate::{
-    crypto::EncryptionInput,
+    crypto::{EncryptionInput, DecryptionInput},
     db::{Database, Item, DisplayItem, AddItemInput},
     error::{Error, Result},
 };
@@ -28,6 +30,7 @@ use crate::{
 #[derive(Debug)]
 pub struct State {
     db: Database,
+    clipboard: ClipboardDebugWrapper,
     is_running: bool,
     passwd_entry: Option<PasswordEntryState>,
     find: Option<FindItemState>,
@@ -40,12 +43,14 @@ pub struct State {
 impl State {
     pub fn new(db: Database) -> Result<Self> {
         let items = db.list_items_for_display(None)?;
+        let clipboard = ClipboardDebugWrapper(Clipboard::new()?);
 
         let table_state = TableState::new()
             .with_selected(if items.is_empty() { None } else { Some(0) });
 
         Ok(State {
             db,
+            clipboard,
             is_running: true,
             passwd_entry: None,
             find: None,
@@ -284,6 +289,9 @@ impl State {
                     self.passwd_entry = None;
                     self.copy_secret_to_clipboard(&password)?;
                 }
+                KeyCode::Char('h' | 'H') if evt.modifiers.contains(KeyModifiers::CONTROL) => {
+                    passwd_entry.toggle_show_enc_pass();
+                }
                 _ => {
                     passwd_entry.enc_pass.input(event);
                 }
@@ -398,30 +406,73 @@ impl State {
         Ok(())
     }
 
-    fn copy_secret_to_clipboard(&self, enc_pass: &str) -> Result<()> {
-        Err(Error::Io(std::io::Error::other("TODO(H2CO3): placeholder error")))
+    fn copy_secret_to_clipboard(&mut self, enc_pass: &str) -> Result<()> {
+        let index = self.table_state.selected().ok_or(Error::SelectionRequired)?;
+        let uid = self.items[index].uid;
+        let item = self.db.item_by_id(uid)?;
+
+        let input = DecryptionInput {
+            encrypted_secret: &item.encrypted_secret,
+            kdf_salt: item.kdf_salt,
+            auth_nonce: item.auth_nonce,
+            label: item.label.as_str(),
+            account: item.account.as_deref(),
+        };
+        let plaintext_secret = input.decrypt_and_verify(enc_pass.as_bytes())?;
+        let secret_str = std::str::from_utf8(&plaintext_secret)?;
+
+        self.clipboard.set_text(secret_str).map_err(Into::into)
     }
 }
 
 #[derive(Debug)]
 struct PasswordEntryState {
+    is_visible: bool,
     enc_pass: TextArea<'static>,
+}
+
+impl PasswordEntryState {
+    fn toggle_show_enc_pass(&mut self) {
+        self.set_visible(!self.is_visible);
+    }
+
+    fn set_visible(&mut self, is_visible: bool) {
+        self.is_visible = is_visible;
+
+        if self.is_visible {
+            self.enc_pass.clear_mask_char();
+        } else {
+            self.enc_pass.set_mask_char('●');
+        }
+
+        let show_hide_title = format!(
+            " <^H> {} password ",
+            if self.is_visible { "Hide" } else { "Show" },
+        );
+
+        self.enc_pass.set_block(
+            Block::bordered()
+                .title(" Enter decryption (master) password ")
+                .title_bottom(" <Enter> OK ")
+                .title_bottom(" <Esc> Cancel ")
+                .title_bottom(show_hide_title)
+                .border_type(BorderType::Rounded)
+        );
+    }
 }
 
 impl Default for PasswordEntryState {
     fn default() -> Self {
         let mut enc_pass = TextArea::default();
-
-        enc_pass.set_block(
-            Block::bordered()
-                .title(" Enter decryption (master) password ")
-                .title_bottom(" <Enter> OK ")
-                .title_bottom(" <Esc> Cancel ")
-                .border_type(BorderType::Rounded)
-        );
         enc_pass.set_style(Style::default().add_modifier(Modifier::BOLD));
 
-        PasswordEntryState { enc_pass }
+        // set up text field style
+        let mut state = PasswordEntryState {
+            is_visible: false,
+            enc_pass,
+        };
+        state.set_visible(false);
+        state
     }
 }
 
@@ -647,5 +698,28 @@ impl FocusedTextArea {
             Secret  => Account,
             EncPass => Secret,
         }
+    }
+}
+
+/// The sole purpose of this is to implement `Debug` so that it doesn't break literally everything.
+struct ClipboardDebugWrapper(Clipboard);
+
+impl Debug for ClipboardDebugWrapper {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("Clipboard").finish_non_exhaustive()
+    }
+}
+
+impl Deref for ClipboardDebugWrapper {
+    type Target = Clipboard;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ClipboardDebugWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
