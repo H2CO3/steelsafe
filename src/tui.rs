@@ -29,6 +29,7 @@ use crate::{
 pub struct State {
     db: Database,
     is_running: bool,
+    passwd_entry: Option<PasswordEntryState>,
     find: Option<FindItemState>,
     new_item: Option<NewItemState>,
     popup_error: Option<Error>,
@@ -46,6 +47,7 @@ impl State {
         Ok(State {
             db,
             is_running: true,
+            passwd_entry: None,
             find: None,
             new_item: None,
             popup_error: None,
@@ -59,17 +61,17 @@ impl State {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let find_height = 3;
-        let table_area = {
+        let bottom_input_height = 3;
+        let mut table_area = {
             let mut area = frame.area();
-            area.height -= find_height;
+            area.height -= bottom_input_height;
             area
         };
-        let find_area = Rect {
+        let bottom_input_area = Rect {
             x: table_area.x,
             y: table_area.y + table_area.height,
             width: table_area.width,
-            height: find_height,
+            height: bottom_input_height,
         };
         let table = Table::new(
             self.items.iter().map(|item| {
@@ -96,7 +98,9 @@ impl State {
                 .border_type(BorderType::Rounded)
         );
 
-        if let Some(find_state) = self.find.as_mut() {
+        if let Some(passwd_entry) = self.passwd_entry.as_mut() {
+            frame.render_widget(&passwd_entry.enc_pass, bottom_input_area);
+        } else if let Some(find_state) = self.find.as_mut() {
             let block = find_state.search_term.block().cloned().unwrap_or_default();
             let block = if find_state.has_focus {
                 block.style(Style::default().add_modifier(Modifier::BOLD))
@@ -105,11 +109,12 @@ impl State {
             };
             find_state.search_term.set_block(block);
 
-            frame.render_stateful_widget(table, table_area, &mut self.table_state);
-            frame.render_widget(&find_state.search_term, find_area);
+            frame.render_widget(&find_state.search_term, bottom_input_area);
         } else {
-            frame.render_stateful_widget(table, frame.area(), &mut self.table_state);
+            table_area = frame.area();
         }
+
+        frame.render_stateful_widget(table, table_area, &mut self.table_state);
 
         if let Some(error) = self.popup_error.as_ref() {
             let mut dialog_area = table_area;
@@ -192,6 +197,10 @@ impl State {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
+        let event = match self.handle_passwd_entry_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
+            ControlFlow::Continue(event) => event,
+        };
         let event = match self.handle_find_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
@@ -210,10 +219,10 @@ impl State {
         };
 
         match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
                 self.table_state.select_previous();
             }
-            KeyCode::Down | KeyCode::Tab => {
+            KeyCode::Down | KeyCode::Tab | KeyCode::Char('j' | 'J') => {
                 self.table_state.select_next();
             }
             KeyCode::Char('1') => {
@@ -221,6 +230,9 @@ impl State {
             }
             KeyCode::Char('0') => {
                 self.table_state.select_last();
+            }
+            KeyCode::Char('c' | 'C') => {
+                self.passwd_entry = Some(PasswordEntryState::default());
             }
             KeyCode::Char('f' | 'F' | '/') => {
                 // if we are already in find mode, do NOT reset
@@ -251,6 +263,33 @@ impl State {
         if let Event::Key(evt) = event {
             if evt.code == KeyCode::Esc {
                 self.popup_error = None;
+            }
+        }
+
+        Ok(ControlFlow::Break(()))
+    }
+
+    fn handle_passwd_entry_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
+        let Some(passwd_entry) = self.passwd_entry.as_mut() else {
+            return Ok(ControlFlow::Continue(event));
+        };
+
+        match event {
+            Event::Key(evt) => match evt.code {
+                KeyCode::Esc => {
+                    self.passwd_entry = None;
+                }
+                KeyCode::Enter => {
+                    let password = Zeroizing::new(passwd_entry.enc_pass.lines().join("\n"));
+                    self.passwd_entry = None;
+                    self.copy_secret_to_clipboard(&password)?;
+                }
+                _ => {
+                    passwd_entry.enc_pass.input(event);
+                }
+            },
+            _ => {
+                passwd_entry.enc_pass.input(event);
             }
         }
 
@@ -357,6 +396,32 @@ impl State {
         }
 
         Ok(())
+    }
+
+    fn copy_secret_to_clipboard(&self, enc_pass: &str) -> Result<()> {
+        Err(Error::Io(std::io::Error::other("TODO(H2CO3): placeholder error")))
+    }
+}
+
+#[derive(Debug)]
+struct PasswordEntryState {
+    enc_pass: TextArea<'static>,
+}
+
+impl Default for PasswordEntryState {
+    fn default() -> Self {
+        let mut enc_pass = TextArea::default();
+
+        enc_pass.set_block(
+            Block::bordered()
+                .title(" Enter decryption (master) password ")
+                .title_bottom(" <Enter> OK ")
+                .title_bottom(" <Esc> Cancel ")
+                .border_type(BorderType::Rounded)
+        );
+        enc_pass.set_style(Style::default().add_modifier(Modifier::BOLD));
+
+        PasswordEntryState { enc_pass }
     }
 }
 

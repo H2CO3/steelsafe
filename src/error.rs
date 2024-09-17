@@ -10,25 +10,25 @@ use nanosql::Error as SqlError;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("can't re-open screen guard while one is already open")]
+    #[error("Can't re-open screen guard while one is already open")]
     ScreenAlreadyOpen,
-    #[error("can't find database directory")]
+    #[error("Can't find database directory")]
     MissingDatabaseDir,
-    #[error("label is required and must be a single line")]
+    #[error("Label is required and must be a single line")]
     LabelRequired,
-    #[error("secret is required")]
+    #[error("Secret is required")]
     SecretRequired,
-    #[error("encryption (master) password is required and must be a single line")]
+    #[error("Encryption (master) password is required and must be a single line")]
     EncryptionPasswordRequired,
-    #[error("account name must be a single line if specified")]
+    #[error("Account name must be a single line if specified")]
     AccountNameSingleLine,
-    #[error(transparent)]
+    #[error("I/O error: {0}")]
     Io(#[from] IoError),
-    #[error(transparent)]
+    #[error("Database error: {0}")]
     Db(#[from] SqlError),
-    #[error(transparent)]
+    #[error("Password hashing error: {0}")]
     Argon2(#[from] Argon2Error),
-    #[error(transparent)]
+    #[error("Encryption/decryption error: {0}")]
     XChaCha20Poly1305(#[from] XChaCha20Poly1305Error),
     #[error(transparent)]
     InvalidLength(#[from] InvalidLength),
