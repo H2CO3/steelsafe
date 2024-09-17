@@ -1,7 +1,9 @@
 //! Errors and results specific to Steelsafe.
 
+use std::fmt::{self, Display, Debug, Formatter};
 use std::io::Error as IoError;
 use std::str::Utf8Error;
+use std::error::Error as StdError;
 use thiserror::Error;
 use serde_json::Error as JsonError;
 use argon2::Error as Argon2Error;
@@ -12,7 +14,7 @@ use arboard::Error as ClipboardError;
 use nanosql::Error as SqlError;
 
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum Error {
     #[error("Can't re-open screen guard while one is already open")]
     ScreenAlreadyOpen,
@@ -60,7 +62,41 @@ pub enum Error {
     InvalidLength(#[from] InvalidLength),
 
     #[error(transparent)]
-    Cliboard(#[from] ClipboardError),
+    Clipboard(#[from] ClipboardError),
+
+    #[error("{message}: {source}")]
+    Context {
+        message: String,
+        #[source]
+        source: Box<dyn StdError + Send + Sync + 'static>,
+    },
+}
+
+impl Debug for Error {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, formatter)
+    }
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
+
+pub trait ResultExt<T> {
+    fn context<M>(self, message: M) -> Result<T>
+    where
+        M: Into<String>;
+}
+
+impl<T, E> ResultExt<T> for Result<T, E>
+where
+    E: StdError + Send + Sync + 'static
+{
+    fn context<M>(self, message: M) -> Result<T>
+    where
+        M: Into<String>
+    {
+        self.map_err(|error| Error::Context {
+            message: message.into(),
+            source: Box::new(error),
+        })
+    }
+}

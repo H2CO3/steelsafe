@@ -1,0 +1,25 @@
+{
+    "theme": {
+        "default": {
+            "bg": "black",
+            "fg": "yellow"
+        },
+        "highlight": {
+            "bg": "gray",
+            "fg": "black"
+        },
+        "border": {
+            "bg": "black",
+            "fg": "bright_yellow"
+        },
+        "border_highlight": {
+            "bg": "gray",
+            "fg": "dark_gray"
+        },
+        "error": {
+            "bg": "red",
+            "fg": "white"
+        }
+    },
+    "database": "/home/myusername/steelsafe-data"
+}

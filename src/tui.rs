@@ -21,6 +21,7 @@ use ratatui::{
 use tui_textarea::TextArea;
 use arboard::Clipboard;
 use crate::{
+    config::Theme,
     crypto::{EncryptionInput, DecryptionInput},
     db::{Database, Item, DisplayItem, AddItemInput},
     error::{Error, Result},
@@ -32,6 +33,7 @@ use crate::{
 pub struct State {
     db: Database,
     clipboard: ClipboardDebugWrapper,
+    theme: Theme,
     is_running: bool,
     passwd_entry: Option<PasswordEntryState>,
     find: Option<FindItemState>,
@@ -42,7 +44,7 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(db: Database) -> Result<Self> {
+    pub fn new(db: Database, theme: Theme) -> Result<Self> {
         let items = db.list_items_for_display(None)?;
         let clipboard = ClipboardDebugWrapper(Clipboard::new()?);
 
@@ -52,6 +54,7 @@ impl State {
         Ok(State {
             db,
             clipboard,
+            theme,
             is_running: true,
             passwd_entry: None,
             find: None,
@@ -151,7 +154,7 @@ impl State {
             [Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Min(24)]
         ).header(
             Row::new(["Title", "Username or account", "Modified at (UTC)"])
-                .style(style::default().add_modifier(Modifier::BOLD))
+                .style(self.theme.default().add_modifier(Modifier::BOLD))
         ).highlight_style(
             Modifier::REVERSED
         ).block(
@@ -165,12 +168,12 @@ impl State {
                 .title_bottom(" [Q]uit ")
                 .border_type(BorderType::Rounded)
                 .border_style(if self.main_table_has_focus() {
-                    style::border().add_modifier(Modifier::BOLD)
+                    self.theme.border().add_modifier(Modifier::BOLD)
                 } else {
-                    style::border()
+                    self.theme.border()
                 })
         ).style(
-            style::default()
+            self.theme.default()
         )
     }
 
@@ -179,12 +182,12 @@ impl State {
             .title(" Error ")
             .title_bottom(" <Esc> Close ")
             .border_type(BorderType::Rounded)
-            .border_style(style::error().add_modifier(Modifier::BOLD));
+            .border_style(self.theme.error().add_modifier(Modifier::BOLD));
 
         Paragraph::new(format!("\n{error}\n"))
             .centered()
             .block(block)
-            .style(style::error())
+            .style(self.theme.error())
     }
 
     fn new_item_background(&self, state: &NewItemState) -> Block<'static> {
@@ -201,7 +204,7 @@ impl State {
                 if state.show_enc_pass { "Hide" } else { "Show" }
             ))
             .border_type(BorderType::Rounded)
-            .border_style(style::border_highlight().add_modifier(Modifier::BOLD))
+            .border_style(self.theme.border_highlight().add_modifier(Modifier::BOLD))
     }
 
     /// Event polling and error handling.
@@ -262,7 +265,7 @@ impl State {
                 self.table_state.select_last();
             }
             KeyCode::Char('c' | 'C') | KeyCode::Enter => {
-                self.passwd_entry = Some(PasswordEntryState::default());
+                self.passwd_entry = Some(PasswordEntryState::with_theme(self.theme.clone()));
             }
             KeyCode::Char('f' | 'F' | '/') => {
                 // if we are already in find mode, do NOT reset
@@ -270,11 +273,11 @@ impl State {
                 if let Some(find_state) = self.find.as_mut() {
                     find_state.set_focus(true);
                 } else {
-                    self.find = Some(FindItemState::default());
+                    self.find = Some(FindItemState::with_theme(self.theme.clone()));
                 }
             }
             KeyCode::Char('n' | 'N') => {
-                self.new_item = Some(NewItemState::default());
+                self.new_item = Some(NewItemState::with_theme(self.theme.clone()));
             }
             KeyCode::Char('q' | 'Q') => {
                 self.is_running = false;
@@ -378,10 +381,10 @@ impl State {
                     new_item.cycle_back();
                 }
                 KeyCode::Enter => {
-                    let result = mem::take(new_item).add_item(&self.db);
-                    self.new_item = None; // close dialog even if an error occurred
+                    // close dialog even if an error occurred
+                    let new_item = self.new_item.take().expect("just checked that new_item is Some");
+                    let added = new_item.add_item(&self.db)?;
 
-                    let added = result?;
                     self.sync_data(false)?;
 
                     if let Some((idx, _item)) = self.items
@@ -480,9 +483,24 @@ impl State {
 struct PasswordEntryState {
     is_visible: bool,
     enc_pass: TextArea<'static>,
+    theme: Theme,
 }
 
 impl PasswordEntryState {
+    fn with_theme(theme: Theme) -> Self {
+        let mut enc_pass = TextArea::default();
+        enc_pass.set_style(theme.default());
+
+        // set up text field style
+        let mut state = PasswordEntryState {
+            is_visible: false,
+            enc_pass,
+            theme,
+        };
+        state.set_visible(false);
+        state
+    }
+
     fn toggle_show_enc_pass(&mut self) {
         self.set_visible(!self.is_visible);
     }
@@ -508,23 +526,8 @@ impl PasswordEntryState {
                 .title_bottom(" <Esc> Cancel ")
                 .title_bottom(show_hide_title)
                 .border_type(BorderType::Rounded)
-                .border_style(style::border().add_modifier(Modifier::BOLD))
+                .border_style(self.theme.border().add_modifier(Modifier::BOLD))
         );
-    }
-}
-
-impl Default for PasswordEntryState {
-    fn default() -> Self {
-        let mut enc_pass = TextArea::default();
-        enc_pass.set_style(style::default());
-
-        // set up text field style
-        let mut state = PasswordEntryState {
-            is_visible: false,
-            enc_pass,
-        };
-        state.set_visible(false);
-        state
     }
 }
 
@@ -532,30 +535,11 @@ impl Default for PasswordEntryState {
 struct FindItemState {
     search_term: TextArea<'static>,
     has_focus: bool,
+    theme: Theme,
 }
 
 impl FindItemState {
-    fn set_focus(&mut self, has_focus: bool) {
-        self.has_focus = has_focus;
-
-        let block = self.search_term.block().cloned().unwrap_or_default();
-
-        if self.has_focus {
-            self.search_term.set_style(style::default().add_modifier(Modifier::BOLD));
-            self.search_term.set_block(
-                block.border_style(style::border().add_modifier(Modifier::BOLD))
-            )
-        } else {
-            self.search_term.set_style(style::default());
-            self.search_term.set_block(
-                block.border_style(style::border())
-            )
-        }
-    }
-}
-
-impl Default for FindItemState {
-    fn default() -> Self {
+    fn with_theme(theme: Theme) -> Self {
         let mut search_term = TextArea::default();
 
         search_term.set_block(
@@ -569,9 +553,28 @@ impl Default for FindItemState {
         let mut state = FindItemState {
             search_term,
             has_focus: true,
+            theme,
         };
         state.set_focus(true);
         state
+    }
+
+    fn set_focus(&mut self, has_focus: bool) {
+        self.has_focus = has_focus;
+
+        let block = self.search_term.block().cloned().unwrap_or_default();
+
+        if self.has_focus {
+            self.search_term.set_style(self.theme.default().add_modifier(Modifier::BOLD));
+            self.search_term.set_block(
+                block.border_style(self.theme.border().add_modifier(Modifier::BOLD))
+            )
+        } else {
+            self.search_term.set_style(self.theme.default());
+            self.search_term.set_block(
+                block.border_style(self.theme.border())
+            )
+        }
     }
 }
 
@@ -584,9 +587,48 @@ struct NewItemState {
     focused: FocusedTextArea,
     show_secret: bool,
     show_enc_pass: bool,
+    theme: Theme,
 }
 
 impl NewItemState {
+    fn with_theme(theme: Theme) -> Self {
+        let mut state = NewItemState {
+            label: TextArea::default(),
+            account: TextArea::default(),
+            secret: TextArea::default(),
+            enc_pass: TextArea::default(),
+            focused: FocusedTextArea::default(),
+            show_secret: false,
+            show_enc_pass: false,
+            theme,
+        };
+
+        // set initial styles
+        state.set_show_secret(false);
+        state.set_show_enc_pass(false);
+
+        let props = [
+            ("Label",   true),
+            ("Account", false),
+            ("Secret (stored)",  true),
+            ("Encryption (master) password", true),
+        ];
+        let border_style = state.theme.border_highlight();
+
+        for (ta, (title, required)) in state.text_areas().zip(props) {
+            ta.set_block(
+                Block::bordered()
+                    .title(format!(" {title} "))
+                    .border_type(BorderType::Rounded)
+                    .border_style(border_style)
+            );
+            ta.set_placeholder_text(if required { "Required" } else { "Optional" });
+        }
+
+        state.set_focused_text_area(FocusedTextArea::default());
+        state
+    }
+
     fn text_areas(&mut self) -> impl Iterator<Item = &mut TextArea<'static>> {
         IntoIterator::into_iter([
             &mut self.label,
@@ -608,16 +650,18 @@ impl NewItemState {
     fn set_focused_text_area(&mut self, which: FocusedTextArea) {
         self.focused = which;
 
+        let highlight_style = self.theme.highlight();
+
         for ta in self.text_areas() {
             if let Some(block) = ta.block() {
-                ta.set_block(block.clone().style(style::highlight()));
+                ta.set_block(block.clone().style(highlight_style));
             }
         }
 
         let ta = self.focused_text_area();
 
         if let Some(block) = ta.block() {
-            ta.set_block(block.clone().style(style::highlight().add_modifier(Modifier::BOLD)));
+            ta.set_block(block.clone().style(highlight_style.add_modifier(Modifier::BOLD)));
         }
     }
 
@@ -704,44 +748,6 @@ impl NewItemState {
     }
 }
 
-impl Default for NewItemState {
-    fn default() -> Self {
-        let mut state = NewItemState {
-            label: TextArea::default(),
-            account: TextArea::default(),
-            secret: TextArea::default(),
-            enc_pass: TextArea::default(),
-            focused: FocusedTextArea::default(),
-            show_secret: false,
-            show_enc_pass: false,
-        };
-
-        // set initial styles
-        state.set_show_secret(false);
-        state.set_show_enc_pass(false);
-
-        let props = [
-            ("Label",   true),
-            ("Account", false),
-            ("Secret (stored)",  true),
-            ("Encryption (master) password", true),
-        ];
-
-        for (ta, (title, required)) in state.text_areas().zip(props) {
-            ta.set_block(
-                Block::bordered()
-                    .title(format!(" {title} "))
-                    .border_type(BorderType::Rounded)
-                    .border_style(style::border_highlight())
-            );
-            ta.set_placeholder_text(if required { "Required" } else { "Optional" });
-        }
-
-        state.set_focused_text_area(FocusedTextArea::default());
-        state
-    }
-}
-
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 enum FocusedTextArea {
     #[default]
@@ -795,31 +801,5 @@ impl Deref for ClipboardDebugWrapper {
 impl DerefMut for ClipboardDebugWrapper {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-/// Unified styles.
-mod style {
-    use ratatui::style::{Style, Color};
-
-
-    pub fn default() -> Style {
-        Style::default().bg(Color::Gray).fg(Color::Black)
-    }
-
-    pub fn highlight() -> Style {
-        Style::default().bg(Color::LightYellow).fg(Color::Black)
-    }
-
-    pub fn border() -> Style {
-        Style::default().bg(Color::Gray).fg(Color::LightBlue)
-    }
-
-    pub fn border_highlight() -> Style {
-        Style::default().bg(Color::LightYellow).fg(Color::LightBlue)
-    }
-
-    pub fn error() -> Style {
-        Style::default().bg(Color::LightYellow).fg(Color::LightRed)
     }
 }

@@ -1,15 +1,16 @@
 #![deny(unsafe_code)]
 
-use directories::ProjectDirs;
 use crate::{
+    config::Config,
     db::Database,
     tui::State,
     screen::ScreenGuard,
-    error::{Error, Result},
+    error::Result,
 };
 
 mod db;
 mod crypto;
+mod config;
 mod error;
 mod screen;
 mod tui;
@@ -41,14 +42,10 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    let dirs = ProjectDirs::from("org", "h2co3", "steelsafe").ok_or(Error::MissingDatabaseDir)?;
-    let db_dir = dirs.data_dir();
-    let db_path = db_dir.join("secrets.sqlite3");
-
-    std::fs::create_dir_all(db_dir)?;
-
+    let config = Config::from_rc_file()?;
+    let db_path = config.ensure_db_dir()?.join("secrets.sqlite3");
     let db = Database::open(db_path)?;
-    let state = State::new(db)?;
+    let state = State::new(db, config.theme)?;
     let app = App::new(state)?;
 
     app.run()
