@@ -32,6 +32,10 @@ impl Database {
     pub fn add_item(&self, input: AddItemInput<'_>) -> Result<Item> {
         self.connection.insert_one(input).map_err(Into::into)
     }
+
+    pub fn item_by_id(&self, id: u64) -> Result<Item> {
+        self.connection.select_by_key(id).map_err(Into::into)
+    }
 }
 
 /// Describes a secret item.

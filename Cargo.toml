@@ -19,3 +19,4 @@ chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 nanosql = { version = "0.9.1", features = ["chrono"] }
 ratatui = "0.28.1"
 tui-textarea = "0.6.1"
+arboard = "3.4.1"
