@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 use ratatui::{
     Frame,
     layout::{Rect, Offset, Constraint},
-    style::{Style, Modifier},
+    style::Modifier,
     widgets::{
         Clear, Table, TableState, Row, Paragraph,
         block::{Block, BorderType},
@@ -89,6 +89,7 @@ impl State {
             [Constraint::Percentage(40), Constraint::Percentage(40), Constraint::Min(24)]
         ).header(
             Row::new(["Title", "Username or account", "Modified at (UTC)"])
+                .style(style::default().add_modifier(Modifier::BOLD))
         ).highlight_style(
             Modifier::REVERSED
         ).block(
@@ -101,19 +102,18 @@ impl State {
                 .title_bottom(" [N]ew item ")
                 .title_bottom(" [Q]uit ")
                 .border_type(BorderType::Rounded)
+                .border_style(if self.table_has_focus() {
+                    style::border().add_modifier(Modifier::BOLD)
+                } else {
+                    style::border()
+                })
+        ).style(
+            style::default()
         );
 
         if let Some(passwd_entry) = self.passwd_entry.as_mut() {
             frame.render_widget(&passwd_entry.enc_pass, bottom_input_area);
         } else if let Some(find_state) = self.find.as_mut() {
-            let block = find_state.search_term.block().cloned().unwrap_or_default();
-            let block = if find_state.has_focus {
-                block.style(Style::default().add_modifier(Modifier::BOLD))
-            } else {
-                block.style(Style::default())
-            };
-            find_state.search_term.set_block(block);
-
             frame.render_widget(&find_state.search_term, bottom_input_area);
         } else {
             table_area = frame.area();
@@ -135,11 +135,13 @@ impl State {
             let block = Block::bordered()
                 .title(" Error ")
                 .title_bottom(" <Esc> Close ")
-                .border_type(BorderType::Rounded);
+                .border_type(BorderType::Rounded)
+                .border_style(style::error().add_modifier(Modifier::BOLD));
 
             let msg = Paragraph::new(format!("\n{error}\n"))
                 .centered()
-                .block(block);
+                .block(block)
+                .style(style::error());
 
             frame.render_widget(Clear, dialog_area);
             frame.render_widget(msg, dialog_area);
@@ -167,7 +169,8 @@ impl State {
                     " <^E> {} encr passwd ",
                     if new_item.show_enc_pass { "Hide" } else { "Show" }
                 ))
-                .border_type(BorderType::Rounded);
+                .border_type(BorderType::Rounded)
+                .border_style(style::border_highlight().add_modifier(Modifier::BOLD));
 
             frame.render_widget(Clear, dialog_area);
             frame.render_widget(&outer, dialog_area);
@@ -243,7 +246,7 @@ impl State {
                 // if we are already in find mode, do NOT reset
                 // the search term, just give back focus.
                 if let Some(find_state) = self.find.as_mut() {
-                    find_state.has_focus = true;
+                    find_state.set_focus(true);
                 } else {
                     self.find = Some(FindItemState::default());
                 }
@@ -317,7 +320,7 @@ impl State {
                     Ok(ControlFlow::Break(()))
                 }
                 KeyCode::Enter if find_state.has_focus => {
-                    find_state.has_focus = false;
+                    find_state.set_focus(false);
                     Ok(ControlFlow::Break(()))
                 }
                 _ if find_state.has_focus => {
@@ -424,6 +427,17 @@ impl State {
 
         self.clipboard.set_text(secret_str).map_err(Into::into)
     }
+
+    fn table_has_focus(&self) -> bool {
+        (
+            self.find.is_none()
+            ||
+            self.find.as_ref().is_some_and(|find| !find.has_focus)
+        )
+        && self.passwd_entry.is_none()
+        && self.new_item.is_none()
+        && self.popup_error.is_none()
+    }
 }
 
 #[derive(Debug)]
@@ -458,6 +472,7 @@ impl PasswordEntryState {
                 .title_bottom(" <Esc> Cancel ")
                 .title_bottom(show_hide_title)
                 .border_type(BorderType::Rounded)
+                .border_style(style::border().add_modifier(Modifier::BOLD))
         );
     }
 }
@@ -465,7 +480,7 @@ impl PasswordEntryState {
 impl Default for PasswordEntryState {
     fn default() -> Self {
         let mut enc_pass = TextArea::default();
-        enc_pass.set_style(Style::default().add_modifier(Modifier::BOLD));
+        enc_pass.set_style(style::default());
 
         // set up text field style
         let mut state = PasswordEntryState {
@@ -483,6 +498,26 @@ struct FindItemState {
     has_focus: bool,
 }
 
+impl FindItemState {
+    fn set_focus(&mut self, has_focus: bool) {
+        self.has_focus = has_focus;
+
+        let block = self.search_term.block().cloned().unwrap_or_default();
+
+        if self.has_focus {
+            self.search_term.set_style(style::default().add_modifier(Modifier::BOLD));
+            self.search_term.set_block(
+                block.border_style(style::border().add_modifier(Modifier::BOLD))
+            )
+        } else {
+            self.search_term.set_style(style::default());
+            self.search_term.set_block(
+                block.border_style(style::border())
+            )
+        }
+    }
+}
+
 impl Default for FindItemState {
     fn default() -> Self {
         let mut search_term = TextArea::default();
@@ -495,10 +530,12 @@ impl Default for FindItemState {
                 .border_type(BorderType::Rounded)
         );
 
-        FindItemState {
+        let mut state = FindItemState {
             search_term,
             has_focus: true,
-        }
+        };
+        state.set_focus(true);
+        state
     }
 }
 
@@ -537,18 +574,14 @@ impl NewItemState {
 
         for ta in self.text_areas() {
             if let Some(block) = ta.block() {
-                ta.set_block(block.clone().style(Style::default()));
+                ta.set_block(block.clone().style(style::highlight()));
             }
         }
 
         let ta = self.focused_text_area();
 
         if let Some(block) = ta.block() {
-            ta.set_block(
-                block.clone().style(
-                    Style::default().add_modifier(Modifier::BOLD)
-                )
-            );
+            ta.set_block(block.clone().style(style::highlight().add_modifier(Modifier::BOLD)));
         }
     }
 
@@ -660,7 +693,10 @@ impl Default for NewItemState {
 
         for (ta, (title, required)) in state.text_areas().zip(props) {
             ta.set_block(
-                Block::bordered().title(format!(" {title} ")).border_type(BorderType::Rounded)
+                Block::bordered()
+                    .title(format!(" {title} "))
+                    .border_type(BorderType::Rounded)
+                    .border_style(style::border_highlight())
             );
             ta.set_placeholder_text(if required { "Required" } else { "Optional" });
         }
@@ -723,5 +759,31 @@ impl Deref for ClipboardDebugWrapper {
 impl DerefMut for ClipboardDebugWrapper {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+/// Unified styles.
+mod style {
+    use ratatui::style::{Style, Color};
+
+
+    pub fn default() -> Style {
+        Style::default().bg(Color::Gray).fg(Color::Black)
+    }
+
+    pub fn highlight() -> Style {
+        Style::default().bg(Color::LightYellow).fg(Color::Black)
+    }
+
+    pub fn border() -> Style {
+        Style::default().bg(Color::Gray).fg(Color::LightBlue)
+    }
+
+    pub fn border_highlight() -> Style {
+        Style::default().bg(Color::LightYellow).fg(Color::LightBlue)
+    }
+
+    pub fn error() -> Style {
+        Style::default().bg(Color::LightYellow).fg(Color::LightRed)
     }
 }
