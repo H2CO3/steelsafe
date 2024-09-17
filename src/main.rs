@@ -29,6 +29,7 @@ impl App {
         })
     }
 
+    /// The main run loop.
     fn run(mut self) -> Result<()> {
         while self.state.is_running() {
             self.screen.draw(|frame| self.state.draw(frame))?;

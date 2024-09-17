@@ -10,12 +10,14 @@ use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
 use crate::error::Result;
 
 
+/// Handle for the secrets database.
 #[derive(Debug)]
 pub struct Database {
     connection: Connection,
 }
 
 impl Database {
+    /// Opens the database at the specified path.
     pub fn open<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>
@@ -26,14 +28,31 @@ impl Database {
         Ok(Database { connection })
     }
 
+    /// Returns the list of items in the database.
+    ///
+    /// The returned data is human-readable: it contains fields such as the identifying
+    /// name/label/title of the entry, the optional account information, and the date of
+    /// creation/last modification. It does not return binary data such as the encrypted
+    /// secret, the KDF salt, or the authentication nonce.
+    ///
+    /// If the `search_term` is `None`, then all items are returned.
+    ///
+    /// If the `search_term` is `Some(_)`, then only items matching the search term will
+    /// be returned. The search term is interpreted as an SQL `LIKE` pattern. The pattern
+    /// will be matched against the label and the account name, and entries matching either
+    /// will be returned.
     pub fn list_items_for_display(&self, search_term: Option<&str>) -> Result<Vec<DisplayItem>> {
         self.connection.compile_invoke(ListItemsForDisplay, search_term).map_err(Into::into)
     }
 
+    /// Creates a new entry in the database using an already-encrypted secret.
     pub fn add_item(&self, input: AddItemInput<'_>) -> Result<Item> {
         self.connection.insert_one(input).map_err(Into::into)
     }
 
+    /// Retrieves a full item from the database based on its unique ID (primary key).
+    /// This includes encryption and authentication data: the encrypted secret, the
+    /// KDF salt, and the authentication nonce.
     pub fn item_by_id(&self, id: u64) -> Result<Item> {
         self.connection.select_by_key(id).map_err(Into::into)
     }

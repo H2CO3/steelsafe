@@ -27,6 +27,7 @@ use crate::{
 };
 
 
+/// The top-level UI state, the basis of rendering.
 #[derive(Debug)]
 pub struct State {
     db: Database,
@@ -61,10 +62,13 @@ impl State {
         })
     }
 
+    /// Returns `true` as long as the application should run.
+    /// Once this returns `false`, the application will exit.
     pub const fn is_running(&self) -> bool {
         self.is_running
     }
 
+    /// Top-level widget rendering.
     pub fn draw(&mut self, frame: &mut Frame) {
         let bottom_input_height = 3;
         let mut table_area = {
@@ -78,7 +82,65 @@ impl State {
             width: table_area.width,
             height: bottom_input_height,
         };
-        let table = Table::new(
+        let table = self.main_table();
+
+        if let Some(passwd_entry) = self.passwd_entry.as_mut() {
+            frame.render_widget(&passwd_entry.enc_pass, bottom_input_area);
+        } else if let Some(find_state) = self.find.as_mut() {
+            frame.render_widget(&find_state.search_term, bottom_input_area);
+        } else {
+            table_area = frame.area();
+        }
+
+        frame.render_stateful_widget(table, table_area, &mut self.table_state);
+
+        if let Some(error) = self.popup_error.as_ref() {
+            let mut dialog_area = table_area;
+            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
+                dialog_area.width = 72 + 2;
+                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
+            }
+            if dialog_area.height > 3 + 2 {
+                dialog_area.height = 3 + 2; // 3 for the message, +2 for the borders
+                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
+            }
+
+            let modal = self.error_modal(error);
+
+            frame.render_widget(Clear, dialog_area);
+            frame.render_widget(modal, dialog_area);
+        } else if let Some(new_item) = self.new_item.as_ref() {
+            let mut dialog_area = table_area;
+
+            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
+                dialog_area.width = 72 + 2;
+                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
+            }
+            if dialog_area.height > 12 + 2 {
+                dialog_area.height = 12 + 2; // 3 for each text area, +2 for the borders
+                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
+            }
+
+            let outer = self.new_item_background(new_item);
+            frame.render_widget(Clear, dialog_area);
+            frame.render_widget(&outer, dialog_area);
+
+            dialog_area.width -= 2;
+
+            let label_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 1 });
+            let desc_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 4 });
+            let secret_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 7 });
+            let passwd_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 10 });
+
+            frame.render_widget(&new_item.label, label_rect);
+            frame.render_widget(&new_item.account, desc_rect);
+            frame.render_widget(&new_item.secret, secret_rect);
+            frame.render_widget(&new_item.enc_pass, passwd_rect);
+        }
+    }
+
+    fn main_table(&self) -> Table<'static> {
+        Table::new(
             self.items.iter().map(|item| {
                 Row::new([
                     item.label.clone(),
@@ -102,99 +164,54 @@ impl State {
                 .title_bottom(" [N]ew item ")
                 .title_bottom(" [Q]uit ")
                 .border_type(BorderType::Rounded)
-                .border_style(if self.table_has_focus() {
+                .border_style(if self.main_table_has_focus() {
                     style::border().add_modifier(Modifier::BOLD)
                 } else {
                     style::border()
                 })
         ).style(
             style::default()
-        );
-
-        if let Some(passwd_entry) = self.passwd_entry.as_mut() {
-            frame.render_widget(&passwd_entry.enc_pass, bottom_input_area);
-        } else if let Some(find_state) = self.find.as_mut() {
-            frame.render_widget(&find_state.search_term, bottom_input_area);
-        } else {
-            table_area = frame.area();
-        }
-
-        frame.render_stateful_widget(table, table_area, &mut self.table_state);
-
-        if let Some(error) = self.popup_error.as_ref() {
-            let mut dialog_area = table_area;
-            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
-                dialog_area.width = 72 + 2;
-                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
-            }
-            if dialog_area.height > 3 + 2 {
-                dialog_area.height = 3 + 2; // 3 for the message, +2 for the borders
-                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
-            }
-
-            let block = Block::bordered()
-                .title(" Error ")
-                .title_bottom(" <Esc> Close ")
-                .border_type(BorderType::Rounded)
-                .border_style(style::error().add_modifier(Modifier::BOLD));
-
-            let msg = Paragraph::new(format!("\n{error}\n"))
-                .centered()
-                .block(block)
-                .style(style::error());
-
-            frame.render_widget(Clear, dialog_area);
-            frame.render_widget(msg, dialog_area);
-        } else if let Some(new_item) = self.new_item.as_ref() {
-            let mut dialog_area = table_area;
-
-            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
-                dialog_area.width = 72 + 2;
-                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
-            }
-            if dialog_area.height > 12 + 2 {
-                dialog_area.height = 12 + 2; // 3 for each text area, +2 for the borders
-                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
-            }
-
-            let outer = Block::bordered()
-                .title(" New secret item ")
-                .title_bottom(" <Enter> Save ")
-                .title_bottom(" <Esc> Cancel ")
-                .title_bottom(format!(
-                    " <^H> {} secret ",
-                    if new_item.show_secret { "Hide" } else { "Show" }
-                ))
-                .title_bottom(format!(
-                    " <^E> {} encr passwd ",
-                    if new_item.show_enc_pass { "Hide" } else { "Show" }
-                ))
-                .border_type(BorderType::Rounded)
-                .border_style(style::border_highlight().add_modifier(Modifier::BOLD));
-
-            frame.render_widget(Clear, dialog_area);
-            frame.render_widget(&outer, dialog_area);
-
-            dialog_area.width -= 2;
-
-            let label_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 1 });
-            let desc_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 4 });
-            let secret_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 7 });
-            let passwd_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 10 });
-
-            frame.render_widget(&new_item.label, label_rect);
-            frame.render_widget(&new_item.account, desc_rect);
-            frame.render_widget(&new_item.secret, secret_rect);
-            frame.render_widget(&new_item.enc_pass, passwd_rect);
-        }
+        )
     }
 
+    fn error_modal(&self, error: &Error) -> Paragraph<'static> {
+        let block = Block::bordered()
+            .title(" Error ")
+            .title_bottom(" <Esc> Close ")
+            .border_type(BorderType::Rounded)
+            .border_style(style::error().add_modifier(Modifier::BOLD));
+
+        Paragraph::new(format!("\n{error}\n"))
+            .centered()
+            .block(block)
+            .style(style::error())
+    }
+
+    fn new_item_background(&self, state: &NewItemState) -> Block<'static> {
+        Block::bordered()
+            .title(" New secret item ")
+            .title_bottom(" <Enter> Save ")
+            .title_bottom(" <Esc> Cancel ")
+            .title_bottom(format!(
+                " <^H> {} secret ",
+                if state.show_secret { "Hide" } else { "Show" }
+            ))
+            .title_bottom(format!(
+                " <^E> {} encr passwd ",
+                if state.show_enc_pass { "Hide" } else { "Show" }
+            ))
+            .border_type(BorderType::Rounded)
+            .border_style(style::border_highlight().add_modifier(Modifier::BOLD))
+    }
+
+    /// Event polling and error handling.
     pub fn handle_events(&mut self) {
         if let Err(error) = self.handle_events_impl() {
             self.popup_error = Some(error);
         }
     }
 
+    /// The bulk of the actual event handling logic.
     fn handle_events_impl(&mut self) -> Result<()> {
         if !event::poll(Duration::from_millis(50))? {
             return Ok(());
@@ -218,6 +235,11 @@ impl State {
             ControlFlow::Continue(event) => event,
         };
 
+        self.handle_main_table_event(event)
+    }
+
+    /// Handles events when the main table has focus.
+    fn handle_main_table_event(&mut self, event: Event) -> Result<()> {
         let Event::Key(key) = event else {
             return Ok(());
         };
@@ -263,6 +285,7 @@ impl State {
         Ok(())
     }
 
+    /// Handles events when the error modal is open.
     fn handle_error_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         if self.popup_error.is_none() {
             return Ok(ControlFlow::Continue(event));
@@ -277,6 +300,7 @@ impl State {
         Ok(ControlFlow::Break(()))
     }
 
+    /// Handles events for the password entry panel before decrypting a secret.
     fn handle_passwd_entry_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         let Some(passwd_entry) = self.passwd_entry.as_mut() else {
             return Ok(ControlFlow::Continue(event));
@@ -307,6 +331,7 @@ impl State {
         Ok(ControlFlow::Break(()))
     }
 
+    /// Handles events for the Find panel.
     fn handle_find_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         let Some(find_state) = self.find.as_mut() else {
             return Ok(ControlFlow::Continue(event));
@@ -334,6 +359,7 @@ impl State {
         }
     }
 
+    /// Handles events for the "New item" dialog.
     fn handle_new_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
         // if the input text area is not open, ignore the event and give it back right away
         let Some(new_item) = self.new_item.as_mut() else {
@@ -385,6 +411,10 @@ impl State {
         Ok(ControlFlow::Break(()))
     }
 
+    /// Reloads the contents of the database from disk to memory.
+    /// If `adjust_selection` is set, the last item of the table
+    /// will be selected. This is useful after certain operations
+    /// that act destructively on the table state (e.g., search).
     fn sync_data(&mut self, adjust_selection: bool) -> Result<()> {
         let search_term = self.find.as_ref().and_then(|find_state| {
             find_state
@@ -409,6 +439,8 @@ impl State {
         Ok(())
     }
 
+    /// Actually copy the decrypted plaintext secret to the clipboard.
+    /// We can't zeroize the clipboard content, so we don't even bother.
     fn copy_secret_to_clipboard(&mut self, enc_pass: &str) -> Result<()> {
         let index = self.table_state.selected().ok_or(Error::SelectionRequired)?;
         let uid = self.items[index].uid;
@@ -423,12 +455,16 @@ impl State {
             last_modified_at: item.last_modified_at,
         };
         let plaintext_secret = input.decrypt_and_verify(enc_pass.as_bytes())?;
+
+        // we do NOT use `String::from_utf8()`, because that would copy the
+        // bytes, and complicate correct zeroization of the secret on error.
         let secret_str = std::str::from_utf8(&plaintext_secret)?;
 
         self.clipboard.set_text(secret_str).map_err(Into::into)
     }
 
-    fn table_has_focus(&self) -> bool {
+    /// The main table has focus when none of the other widgets do.
+    fn main_table_has_focus(&self) -> bool {
         (
             self.find.is_none()
             ||

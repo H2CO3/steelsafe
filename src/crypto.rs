@@ -12,6 +12,9 @@ pub use argon2::RECOMMENDED_SALT_LEN;
 pub const NONCE_LEN: usize = 24;
 pub const PADDING_BLOCK_SIZE: usize = 256;
 
+/// The pieces of data that are not encrypted but still validated using the
+/// specified encryption password, for tamper detection.
+///
 /// Fields are in alphabetical order, so that round-tripping through `Value`
 /// results in bitwise-identical JSON. (This is a precautionary measure.)
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -21,6 +24,12 @@ struct AdditionalData<'a> {
     last_modified_at: DateTime<Utc>,
 }
 
+/// The result of encrypting and authenticating the secret, and authenticating
+/// the additional data, using the specified password. The salt for the Key
+/// Derivation Function and the nonce for the authentication are generated
+/// _inside_ the encryption function, so that the API ensures fresh,
+/// cryptographically strong random values, so accidental re-use is prevented.
+/// This means that the encryption function needs to return these as well.
 #[derive(Clone, Debug)]
 pub struct EncryptionOutput {
     /// The already-encrypted and authenticated secret.
@@ -31,6 +40,7 @@ pub struct EncryptionOutput {
     pub auth_nonce: [u8; NONCE_LEN],
 }
 
+/// The plain old data input for encryption, except for the password.
 #[derive(Clone, Copy, Debug)]
 pub struct EncryptionInput<'a> {
     pub plaintext_secret: &'a [u8],
@@ -40,6 +50,8 @@ pub struct EncryptionInput<'a> {
 }
 
 impl EncryptionInput<'_> {
+    /// Encrypts and authenticates the secret, and authenticates the additional data,
+    /// using a key derived from the `encryption_password`.
     pub fn encrypt_and_authenticate(self, encryption_password: &[u8]) -> Result<EncryptionOutput> {
         // Pad the secret to a multiple of the block size.
         // Directly extending the String could re-allocate, which would leave
@@ -92,6 +104,8 @@ impl EncryptionInput<'_> {
     }
 }
 
+/// Plain old data input for decrypting and verifying the secret, and
+/// verifying the authenticity  of the non-encrypted additional data.
 #[derive(Clone, Copy, Debug)]
 pub struct DecryptionInput<'a> {
     pub encrypted_secret: &'a [u8],
@@ -103,6 +117,8 @@ pub struct DecryptionInput<'a> {
 }
 
 impl DecryptionInput<'_> {
+    /// Decrypts and verifies the secret, and verifies the additional data,
+    /// using a key derived from the `decryption_password`.
     pub fn decrypt_and_verify(self, decryption_password: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         // Re-create the additional authenticated data. This helps detect when
         // the displayed label or account have been tampered with in the database.
