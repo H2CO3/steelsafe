@@ -59,17 +59,17 @@ impl State {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let help_height = 3;
+        let find_height = 3;
         let table_area = {
             let mut area = frame.area();
-            area.height -= help_height;
+            area.height -= find_height;
             area
         };
-        let help_area = Rect {
+        let find_area = Rect {
             x: table_area.x,
             y: table_area.y + table_area.height,
             width: table_area.width,
-            height: help_height,
+            height: find_height,
         };
         let table = Table::new(
             self.items.iter().map(|item| {
@@ -85,9 +85,16 @@ impl State {
         ).highlight_style(
             Modifier::REVERSED
         ).block(
-            Block::bordered().title(" Secrets ").border_type(BorderType::Rounded)
+            Block::bordered()
+                .title(format!(" SteelSafe v{} ", env!("CARGO_PKG_VERSION")))
+                .title_bottom(" [C]opy secret ")
+                .title_bottom(" [F]ind ")
+                .title_bottom(" [1] First ")
+                .title_bottom(" [0] Last ")
+                .title_bottom(" [N]ew item ")
+                .title_bottom(" [Q]uit ")
+                .border_type(BorderType::Rounded)
         );
-        frame.render_stateful_widget(table, table_area, &mut self.table_state);
 
         if let Some(find_state) = self.find.as_mut() {
             let block = find_state.search_term.block().cloned().unwrap_or_default();
@@ -97,16 +104,11 @@ impl State {
                 block.style(Style::default())
             };
             find_state.search_term.set_block(block);
-            frame.render_widget(&find_state.search_term, help_area);
+
+            frame.render_stateful_widget(table, table_area, &mut self.table_state);
+            frame.render_widget(&find_state.search_term, find_area);
         } else {
-            frame.render_widget(
-                Paragraph::new(
-                    " [C]opy secret    [V]iew details    [F]ind    [N]ew item    [Q]uit"
-                ).block(
-                    Block::bordered().title(" Actions ").border_type(BorderType::Rounded)
-                ),
-                help_area,
-            );
+            frame.render_stateful_widget(table, frame.area(), &mut self.table_state);
         }
 
         if let Some(error) = self.popup_error.as_ref() {
@@ -246,14 +248,10 @@ impl State {
             return Ok(ControlFlow::Continue(event));
         }
 
-        match event {
-            Event::Key(evt) => match evt.code {
-                KeyCode::Esc => {
-                    self.popup_error = None;
-                }
-                _ => {}
+        if let Event::Key(evt) = event {
+            if evt.code == KeyCode::Esc {
+                self.popup_error = None;
             }
-            _ => {}
         }
 
         Ok(ControlFlow::Break(()))
@@ -373,7 +371,11 @@ impl Default for FindItemState {
         let mut search_term = TextArea::default();
 
         search_term.set_block(
-            Block::bordered().title(" Search term ").border_type(BorderType::Rounded)
+            Block::bordered()
+                .title(" Search term ")
+                .title_bottom(" <Enter> Focus secrets ")
+                .title_bottom(" <Esc> Exit search ")
+                .border_type(BorderType::Rounded)
         );
 
         FindItemState {
