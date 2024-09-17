@@ -239,7 +239,7 @@ impl State {
             KeyCode::Char('0') => {
                 self.table_state.select_last();
             }
-            KeyCode::Char('c' | 'C') => {
+            KeyCode::Char('c' | 'C') | KeyCode::Enter => {
                 self.passwd_entry = Some(PasswordEntryState::default());
             }
             KeyCode::Char('f' | 'F' | '/') => {
