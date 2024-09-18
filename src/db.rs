@@ -3,17 +3,22 @@
 use std::path::Path;
 use chrono::{DateTime, Utc};
 use nanosql::{
-    Connection, ConnectionExt, Null,
-    Table, Param, ResultRecord, InsertInput,
+    Connection, ConnectionExt, Null, Value,
+    Table, Param, ResultRecord, InsertInput, AsSqlTy, FromSql, ToSql,
 };
+use nanosql::rusqlite::TransactionBehavior;
 use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
+
+/// The current version of the database schema.
+const SCHEMA_VERSION: i64 = 1;
 
 /// Handle for the secrets database.
 #[derive(Debug)]
 pub struct Database {
     connection: Connection,
+    schema_version: i64,
 }
 
 impl Database {
@@ -24,8 +29,44 @@ impl Database {
     {
         let mut connection = Connection::connect(path)?;
         connection.create_table::<Item>()?;
+        connection.create_table::<Metadata>()?;
 
-        Ok(Database { connection })
+        let schema_version = Self::schema_version(&mut connection)?;
+
+        if SCHEMA_VERSION < schema_version {
+            return Err(Error::SchemaVersionMismatch {
+                expected: SCHEMA_VERSION,
+                actual: schema_version,
+            });
+        }
+
+        Ok(Database { connection, schema_version })
+    }
+
+    /// Retrieves the schema version of the database.
+    /// If the schema version was not yet set (because the database was just created),
+    /// then the schema version of the currently-running steelsafe process will be
+    /// inserted (and returned).
+    fn schema_version(connection: &mut Connection) -> nanosql::Result<i64> {
+        // If the schema version is not yet stored in the DB, then insert it.
+        // Otherwise, leave the existing version (ignore the insertion).
+        let txn = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let metadata = Metadata {
+            key: MetadataKey::SchemaVersion,
+            value: Value::Integer(SCHEMA_VERSION),
+        };
+
+        // If we didn't insert the version, that means we didn't create the database.
+        // In this case, we need to check the version to decide whether we can handle
+        // it. (If we did create the database, then we are convinced we can handle it.)
+        txn.insert_or_ignore_one(metadata)?;
+
+        let Metadata { ref value, .. } = txn.select_by_key(MetadataKey::SchemaVersion)?;
+        let version = <i64 as FromSql>::column_result(value.into())?;
+
+        txn.commit()?;
+
+        Ok(version)
     }
 
     /// Returns the list of items in the database.
@@ -90,6 +131,7 @@ pub struct Item {
     pub auth_nonce: [u8; NONCE_LEN],
 }
 
+/// Used for adding an encrypted secret item to the database.
 #[derive(Clone, Param, InsertInput)]
 #[nanosql(table = Item)]
 pub struct AddItemInput<'p> {
@@ -103,12 +145,30 @@ pub struct AddItemInput<'p> {
     pub auth_nonce: [u8; NONCE_LEN],
 }
 
+/// Human-readable subset (projection) of the `Item` table.
+/// Does not contain the secret or the encryption details (salt/nonce).
 #[derive(Clone, Debug, ResultRecord)]
 pub struct DisplayItem {
     pub uid: u64,
     pub label: String,
     pub account: Option<String>,
     pub last_modified_at: DateTime<Utc>,
+}
+
+/// Internal technical bookkeeping data (e.g., database version).
+#[derive(Clone, Debug, Table, Param, ResultRecord)]
+struct Metadata {
+    #[nanosql(pk)]
+    key: MetadataKey,
+    value: Value,
+}
+
+/// The kinds of metadata stored in the database.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, AsSqlTy, ToSql, FromSql, Param, ResultRecord)]
+#[nanosql(rename_all = "lower_snake_case")]
+enum MetadataKey {
+    /// The version of the database schema that determines its format.
+    SchemaVersion,
 }
 
 nanosql::define_query! {

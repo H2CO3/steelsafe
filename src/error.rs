@@ -49,6 +49,12 @@ pub enum Error {
     #[error("Database error: {0}")]
     Db(#[from] SqlError),
 
+    #[error("Database schema version too high: need <= {expected}, got {actual}")]
+    SchemaVersionMismatch {
+        expected: i64,
+        actual: i64,
+    },
+
     #[error("Password hashing error: {0}")]
     Argon2(#[from] Argon2Error),
 
