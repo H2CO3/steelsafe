@@ -12,9 +12,13 @@ In particular:
   length. The settings of the Argon2 hash function are the [recommended values][1]
   (19 MB RAM, Argon2id algorithm variant, 2 iterations, 1 degree of parallelism).
 * The length of the KDF salt follows the recommended value, too (16 bytes), and
-  the variant of ChaCha20 with a longer nonce (24 bytes), XChaCha20 is used.
+  the variant of ChaCha20 with a longer nonce (24 bytes), XChaCha20 is used. The
+  latter allows us to use randomly-generated nonces without any real risk of ever
+  repeating them.
 * Salts and nonces are generated using a cryptographically-strong PRNG, and the
-  internal structure of the code makes salt or nonce reuse impossible.
+  combination of the internal structure of the code and database constraints make
+  salt or nonce reuse impossible **within the same database.** There's **no way**
+  for the software to guarantee salt and nonce uniqueness **globally,** across DBs.
 * Cleartext secrets are securely overwritten after use under as many circumstances
   as possible. This is not _always_ possible, so it is done on a best effort basis.
 * It doesn't expose these details to the user, so it's impossible to set them to
@@ -51,7 +55,7 @@ still make a fine addition to the power user's toolbox.
 
 ### Installation
 
-You'll need the [Rust toolchain](https://www.rust-lang.org/tools/install), then simply:
+You'll need the [Rust toolchain][4], then simply:
 
 ```shell
 cargo install steelsafe
@@ -95,7 +99,7 @@ fields for:
   different for each individual entry,** but typically, most people will use a single one.
 
 The credential to be encrypted may contain multiple lines, while the master encryption password
-**must not** contain line breaks.
+**must not** contain line breaks. The account name, if given, must also span a single line only.
 
 Use the up/down arrow keys or `<TAB>` to cycle through the text fields.
 
@@ -131,6 +135,26 @@ If you are done searching, press `<ESC>` to exit search mode; this will restore 
 credentials and show the full list again. Alternatively, you can press `f` or `/` again to
 re-focus the search field and refine your search term.
 
+### A note about salt and nonce reuse and predictability
+
+Steelsafe uses SQL uniqueness constraints to prevent duplication of salts and/or nonces
+within a given database. It also uses a cryptographically-secure pseudo-random number
+generator (CSPRNG) for generating salts and nonces that are essentially unpredictable to
+an attacker. However, **it can't possibly enforce global uniqueness across different password
+database files.**
+
+The length of the salt and nonce (128 and 192 bits, respectively) make it _highly unlikely_
+that salts and nonces are ever repeated during regular, personal use, given the relatively
+small number of entries, [compared to the number of possible salts or nonces][5]. Yet, to
+avoid catastrophic failure of the key derivation, encryption, and authentication mechanisms,
+it is **strongly recommended that you do no re-use master passwords across databases.** As
+always, you are advised to employ password management best practices with your encryption
+(master) password(s).
+
+What we technically _could_ do is add another level of **database-global** salt to the key
+derivation process. This would be equivalent with a longer salt, but it still wouldn't,
+strictly speaking, _ensure_ global uniqueness across databases, so we simply don't bother.
+
 ### A note about clipboard behavior
 
 On some platforms, especially Linux and other platforms using X11 or Wayland, clipboard
@@ -140,7 +164,7 @@ secret.
 
 ### Database Path
 
-The database is located in the [project data directory][4] by default, and it is called
+The database is located in the [project data directory][6] by default, and it is called
 `secrets.sqlite3`. You can use the `.steelsaferc` file (see below) to change the path
 of the directory. The file name cannot be changed.
 
@@ -148,16 +172,18 @@ of the directory. The file name cannot be changed.
 
 Steelsafe will search the `.steelsaferc` configuration file (in this order) at:
 
-* the [project config directory][5]
+* the [project config directory][7]
 * or `$HOME`
 
-An example of the config file can be found [here][6]. It is a JSON with self-explanatory
+An example of the config file can be found [here][8]. It is a JSON with self-explanatory
 structure; you can currently use it to change the colors of various UI elements and the
 path of the secrets database.
 
 [1]: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
 [2]: https://github.com/RustCrypto
 [3]: https://sqlite.org
-[4]: https://docs.rs/directories/latest/directories/struct.ProjectDirs.html#method.data_dir
-[5]: https://docs.rs/directories/latest/directories/struct.ProjectDirs.html#method.config_dir
-[6]: https://github.com/H2CO3/steelsafe/blob/master/.steelsaferc
+[4]: https://www.rust-lang.org/tools/install
+[5]: https://en.wikipedia.org/wiki/Birthday_attack
+[6]: https://docs.rs/directories/latest/directories/struct.ProjectDirs.html#method.data_dir
+[7]: https://docs.rs/directories/latest/directories/struct.ProjectDirs.html#method.config_dir
+[8]: https://github.com/H2CO3/steelsafe/blob/master/.steelsaferc

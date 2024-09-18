@@ -76,8 +76,17 @@ pub struct Item {
     /// Also contains a copy of the other fields for the purpose of tamper protection.
     pub encrypted_secret: Vec<u8>,
     /// The salt for the key derivation function.
+    ///
+    /// This is `UNIQUE`, acting as an additional line of defense against
+    /// salt re-use, which would result in two users with the same password
+    /// and salt getting identical encryption keys.
+    #[nanosql(unique)]
     pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
     /// The nonce for the authentication function.
+    ///
+    /// This is `UNIQUE`, acting as an additional line of defense against
+    /// nonce re-use, which would allow breaking encryption/authentication.
+    #[nanosql(unique)]
     pub auth_nonce: [u8; NONCE_LEN],
 }
 

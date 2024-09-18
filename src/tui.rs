@@ -14,9 +14,7 @@ use ratatui::{
         Clear, Table, TableState, Row, Paragraph,
         block::{Block, BorderType},
     },
-    crossterm::{
-        event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
-    },
+    crossterm::event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
 };
 use tui_textarea::TextArea;
 use arboard::Clipboard;
@@ -703,12 +701,12 @@ impl NewItemState {
 
     fn add_item(self, db: &Database) -> Result<Item> {
         let label = match self.label.lines() {
-            [line] if !line.is_empty() => line.trim(),
+            [line] if !line.trim().is_empty() => line.trim(),
             _ => return Err(Error::LabelRequired),
         };
         let account = match self.account.lines() {
             [] => None,
-            [line] => if line.is_empty() { None } else { Some(line.trim()) },
+            [line] => if line.trim().is_empty() { None } else { Some(line.trim()) },
             _ => return Err(Error::AccountNameSingleLine),
         };
 
