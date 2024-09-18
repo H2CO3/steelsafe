@@ -1,3 +1,5 @@
+//! Key derivation, encryption, and authentication.
+
 use serde::Serialize;
 use chrono::{DateTime, Utc};
 use zeroize::Zeroizing;
@@ -9,6 +11,7 @@ use crate::Result;
 
 
 pub use argon2::RECOMMENDED_SALT_LEN;
+
 pub const NONCE_LEN: usize = 24;
 pub const PADDING_BLOCK_SIZE: usize = 256;
 

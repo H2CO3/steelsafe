@@ -1,5 +1,6 @@
 //! Configures the environment of the application: color themes, database path, etc.
 
+use std::io::ErrorKind;
 use std::borrow::Cow;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -24,17 +25,47 @@ impl Config {
     /// Reads the config from the `.steelsaferc` file if it exists.
     /// Otherwise, returns the default configuration.
     ///
+    /// The config is first searched at the [permanent config directory][1],
+    /// and then under `$HOME`
+    ///
     /// If the file exists but it contains syntax errors, an error is returned.
     pub fn from_rc_file() -> Result<Self> {
-        if let Some(user_dirs) = UserDirs::new() {
-            let config_path = user_dirs.home_dir().join(".steelsaferc");
-            if let Ok(config_file) = File::open(config_path) {
+        // First, search in the config directory
+        if let Ok(project_dirs) = Self::project_dirs() {
+            let config_path = project_dirs.config_dir().join(".steelsaferc");
+            if let Some(config_file) = Self::open_file_if_exists(&config_path)? {
                 // do NOT silently ignore JSON syntax/semantic errors!
                 return serde_json::from_reader(config_file).context("Invalid .steelsaferc");
             }
         }
 
+        // If not found, search in $HOME
+        if let Some(user_dirs) = UserDirs::new() {
+            let config_path = user_dirs.home_dir().join(".steelsaferc");
+            if let Some(config_file) = Self::open_file_if_exists(&config_path)? {
+                return serde_json::from_reader(config_file).context("Invalid .steelsaferc");
+            }
+        }
+
+        // not found anywhere, return the built-in default config
         Ok(Config::default())
+    }
+
+    fn project_dirs() -> Result<ProjectDirs> {
+        ProjectDirs::from("org", "h2co3", "steelsafe").ok_or(Error::MissingDatabaseDir)
+    }
+
+    fn open_file_if_exists(path: &Path) -> Result<Option<File>> {
+        match File::open(path) {
+            Ok(file) => Ok(Some(file)),
+            Err(error) => {
+                if [ErrorKind::NotFound, ErrorKind::PermissionDenied].contains(&error.kind()) {
+                    Ok(None)
+                } else {
+                    Err(Error::context(error, "Found .steelsaferc but cannot open"))
+                }
+            }
+        }
     }
 
     /// Creates the directory containing the password database.
@@ -45,7 +76,7 @@ impl Config {
             return Ok(path.into());
         }
 
-        let dirs = ProjectDirs::from("org", "h2co3", "steelsafe").ok_or(Error::MissingDatabaseDir)?;
+        let dirs = Self::project_dirs()?;
         let db_dir = dirs.data_dir();
 
         std::fs::create_dir_all(db_dir)?;

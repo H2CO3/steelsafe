@@ -72,6 +72,19 @@ pub enum Error {
     },
 }
 
+impl Error {
+    pub fn context<E, M>(source: E, message: M) -> Self
+    where
+        E: StdError + Send + Sync + 'static,
+        M: Into<String>,
+    {
+        Error::Context {
+            message: message.into(),
+            source: Box::new(source),
+        }
+    }
+}
+
 impl Debug for Error {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self, formatter)
@@ -94,9 +107,6 @@ where
     where
         M: Into<String>
     {
-        self.map_err(|error| Error::Context {
-            message: message.into(),
-            source: Box::new(error),
-        })
+        self.map_err(|error| Error::context(error, message))
     }
 }
