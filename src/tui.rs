@@ -739,7 +739,7 @@ impl NewItemState {
             label,
             account,
             last_modified_at: encryption_input.last_modified_at,
-            encrypted_secret: encryption_output.enc_secret.as_slice(),
+            encrypted_secret: encryption_output.encrypted_secret.as_slice(),
             kdf_salt: encryption_output.kdf_salt,
             auth_nonce: encryption_output.auth_nonce,
         })

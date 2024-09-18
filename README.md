@@ -34,6 +34,8 @@ In particular:
 * The data are stored in a battle-tested, structured, robust, and accessible format:
   [SQLite3][3]. SQLite is one of the long-term storage formats recommended by the
   United States Library of Congress.
+* The database and cryptography logic are stand-alone, testable, and tested, so we
+  can be sure that they are actually doing what we want them to do.
 
 Due to its simplicity and zero-config nature, the application is primarily intended
 for **personal** use; a good use case is painless migration to a new computer.

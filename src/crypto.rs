@@ -10,9 +10,14 @@ use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload, KeySize
 use crate::Result;
 
 
+/// The length of the per-item password salt, in bytes.
 pub use argon2::RECOMMENDED_SALT_LEN;
 
+/// The length of the per-item authentication nonce, in bytes.
 pub const NONCE_LEN: usize = 24;
+
+/// The length of the padding block size, in bytes. The plaintext secret will be
+/// padded before encryption, so that its length is a multiple of this block size.
 pub const PADDING_BLOCK_SIZE: usize = 256;
 
 /// The pieces of data that are not encrypted but still validated using the
@@ -36,7 +41,7 @@ struct AdditionalData<'a> {
 #[derive(Clone, Debug)]
 pub struct EncryptionOutput {
     /// The already-encrypted and authenticated secret.
-    pub enc_secret: Vec<u8>,
+    pub encrypted_secret: Vec<u8>,
     /// The randomly-generated salt, used for seeding the KDF.
     pub kdf_salt: [u8; RECOMMENDED_SALT_LEN],
     /// The randomly-generated nonce, used for initializing the AEAD hash.
@@ -97,10 +102,10 @@ impl EncryptionInput<'_> {
             msg: padded_secret.as_slice(),
             aad: additional_data_str.as_bytes(),
         };
-        let enc_secret = aead.encrypt(<_>::from(&auth_nonce), payload)?;
+        let encrypted_secret = aead.encrypt(<_>::from(&auth_nonce), payload)?;
 
         Ok(EncryptionOutput {
-            enc_secret,
+            encrypted_secret,
             kdf_salt,
             auth_nonce,
         })
@@ -157,5 +162,201 @@ impl DecryptionInput<'_> {
         plaintext_secret.truncate(unpadded_len);
 
         Ok(plaintext_secret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Utc, Days};
+    use rand::{Rng, RngCore, distributions::{Standard, DistString}};
+    use crate::error::{Error, Result};
+    use super::{EncryptionInput, DecryptionInput, PADDING_BLOCK_SIZE};
+
+
+    #[test]
+    fn correct_encryption_and_decryption_succeeds() -> Result<()> {
+        let timestamp = Utc::now();
+        let mut rng = rand::thread_rng();
+        let p0 = vec![]; // empty payload edge case
+        let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
+        let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
+        let mut p3 = vec![0_u8; PADDING_BLOCK_SIZE + 1];
+
+        rng.fill_bytes(&mut p1);
+        rng.fill_bytes(&mut p2);
+        rng.fill_bytes(&mut p3);
+
+        for payload in [p0, p1, p2, p3] {
+            let password_len: usize = rng.gen_range(8..64);
+            let password = Standard.sample_string(&mut rng, password_len);
+            let encryption_input = EncryptionInput {
+                plaintext_secret: payload.as_slice(),
+                label: "the precise label does not matter",
+                account: Some("my uninteresting account name"),
+                last_modified_at: timestamp,
+            };
+
+            let output = encryption_input.encrypt_and_authenticate(password.as_bytes())?;
+            let decryption_input = DecryptionInput {
+                encrypted_secret: output.encrypted_secret.as_slice(),
+                kdf_salt: output.kdf_salt,
+                auth_nonce: output.auth_nonce,
+                label: encryption_input.label,
+                account: encryption_input.account,
+                last_modified_at: timestamp,
+            };
+            let decrypted_secret = decryption_input.decrypt_and_verify(password.as_bytes())?;
+
+            assert_eq!(decrypted_secret.as_slice(), payload.as_slice());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn incorrect_password_fails_decryption() -> Result<()> {
+        let timestamp = Utc::now();
+        let mut rng = rand::thread_rng();
+        let p0 = vec![]; // empty payload edge case
+        let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
+        let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
+        let mut p3 = vec![0_u8; PADDING_BLOCK_SIZE + 1];
+
+        rng.fill_bytes(&mut p1);
+        rng.fill_bytes(&mut p2);
+        rng.fill_bytes(&mut p3);
+
+        for payload in [p0, p1, p2, p3] {
+            let password_len: usize = rng.gen_range(8..64);
+            let password = Standard.sample_string(&mut rng, password_len);
+            let encryption_input = EncryptionInput {
+                plaintext_secret: payload.as_slice(),
+                label: "the precise label does not matter",
+                account: Some("my uninteresting account name"),
+                last_modified_at: timestamp,
+            };
+
+            let output = encryption_input.encrypt_and_authenticate(password.as_bytes())?;
+            let decryption_input = DecryptionInput {
+                encrypted_secret: output.encrypted_secret.as_slice(),
+                kdf_salt: output.kdf_salt,
+                auth_nonce: output.auth_nonce,
+                label: encryption_input.label,
+                account: encryption_input.account,
+                last_modified_at: timestamp,
+            };
+
+            let wrong_password = b"this is NOT the right password!";
+            let result = decryption_input.decrypt_and_verify(wrong_password);
+
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::XChaCha20Poly1305(chacha20poly1305::Error))
+                ),
+                "unexpected result: {:#?}",
+                result,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn altered_additional_data_fails_verification() -> Result<()> {
+        let timestamp = Utc::now();
+        let mut rng = rand::thread_rng();
+        let p0 = vec![]; // empty payload edge case
+        let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
+        let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
+        let mut p3 = vec![0_u8; PADDING_BLOCK_SIZE + 1];
+
+        rng.fill_bytes(&mut p1);
+        rng.fill_bytes(&mut p2);
+        rng.fill_bytes(&mut p3);
+
+        for payload in [p0, p1, p2, p3] {
+            let password_len: usize = rng.gen_range(8..64);
+            let password = Standard.sample_string(&mut rng, password_len);
+            let encryption_input = EncryptionInput {
+                plaintext_secret: payload.as_slice(),
+                label: "the precise label does not matter",
+                account: Some("my uninteresting account name"),
+                last_modified_at: timestamp,
+            };
+
+            let output = encryption_input.encrypt_and_authenticate(password.as_bytes())?;
+
+            // Case #1: the account is altered (None instead of Some)
+            {
+                let decryption_input = DecryptionInput {
+                    encrypted_secret: output.encrypted_secret.as_slice(),
+                    kdf_salt: output.kdf_salt,
+                    auth_nonce: output.auth_nonce,
+                    label: encryption_input.label,
+                    account: None,
+                    last_modified_at: timestamp,
+                };
+
+                let result = decryption_input.decrypt_and_verify(password.as_bytes());
+
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::XChaCha20Poly1305(chacha20poly1305::Error))
+                    ),
+                    "unexpected result: {:#?}",
+                    result,
+                );
+            }
+
+            // Case #2: the label is (slightly) altered
+            {
+                let decryption_input = DecryptionInput {
+                    encrypted_secret: output.encrypted_secret.as_slice(),
+                    kdf_salt: output.kdf_salt,
+                    auth_nonce: output.auth_nonce,
+                    label: &encryption_input.label[1..],
+                    account: encryption_input.account,
+                    last_modified_at: timestamp,
+                };
+
+                let result = decryption_input.decrypt_and_verify(password.as_bytes());
+
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::XChaCha20Poly1305(chacha20poly1305::Error))
+                    ),
+                    "unexpected result: {:#?}",
+                    result,
+                );
+            }
+
+            // Case #2: the last modification date is tampered with
+            {
+                let decryption_input = DecryptionInput {
+                    encrypted_secret: output.encrypted_secret.as_slice(),
+                    kdf_salt: output.kdf_salt,
+                    auth_nonce: output.auth_nonce,
+                    label: encryption_input.label,
+                    account: encryption_input.account,
+                    last_modified_at: timestamp.checked_sub_days(Days::new(1)).unwrap(),
+                };
+
+                let result = decryption_input.decrypt_and_verify(password.as_bytes());
+
+                assert!(
+                    matches!(
+                        result,
+                        Err(Error::XChaCha20Poly1305(chacha20poly1305::Error))
+                    ),
+                    "unexpected result: {:#?}",
+                    result,
+                );
+            }
+        }
+
+        Ok(())
     }
 }
