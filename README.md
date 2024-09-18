@@ -147,9 +147,12 @@ The length of the salt and nonce (128 and 192 bits, respectively) make it _highl
 that salts and nonces are ever repeated during regular, personal use, given the relatively
 small number of entries, [compared to the number of possible salts or nonces][5]. Yet, to
 avoid catastrophic failure of the key derivation, encryption, and authentication mechanisms,
-it is **strongly recommended that you do no re-use master passwords across databases.** As
-always, you are advised to employ password management best practices with your encryption
-(master) password(s).
+it is **strongly recommended that you do not re-use master passwords across databases.** If
+you are only using a single database, as most users will, this criterion is automatically
+fulfilled.
+
+As always, you are advised to employ password management best practices with your master
+(encryption and decryption) password(s) as well.
 
 What we technically _could_ do is add another level of **database-global** salt to the key
 derivation process. This would be equivalent with a longer salt, but it still wouldn't,

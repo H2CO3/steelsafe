@@ -59,7 +59,7 @@ impl Database {
 }
 
 /// Describes a secret item.
-#[derive(Clone, Debug, Table, ResultRecord)]
+#[derive(Clone, PartialEq, Eq, Debug, Table, ResultRecord)]
 #[nanosql(insert_input_ty = AddItemInput<'p>)]
 pub struct Item {
     /// Unique identifier of the item.
@@ -125,5 +125,100 @@ nanosql::define_query! {
         WHERE ?1 IS NULL OR "item"."label" LIKE ?1 OR "item"."account" LIKE ?1
         ORDER BY "item"."uid";
         "#
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use nanosql::{Null, Error as NanosqlError};
+    use nanosql::rusqlite::{ErrorCode, Error as SqliteError};
+    use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
+    use crate::error::{Error, Result};
+    use super::{Database, AddItemInput};
+
+
+    #[test]
+    fn salt_uniqueness_is_enforced() -> Result<()> {
+        let db = Database::open(":memory:")?;
+        let salt: [u8; RECOMMENDED_SALT_LEN] = *b"Qk2Dw5aV65Ie8y7t";
+        let nonce_1: [u8; NONCE_LEN] = *b"lMVXTMT2z2giginHeWwIajy4";
+        let nonce_2: [u8; NONCE_LEN] = *b"rZNaJw3dBHmiqGhfUxLbjL6x";
+
+        let input_1 = AddItemInput {
+            uid: Null,
+            label: "Some label",
+            account: Some("first@account.com"),
+            last_modified_at: Utc::now(),
+            encrypted_secret: b"EncrYpt3d S3cre7!123",
+            kdf_salt: salt,
+            auth_nonce: nonce_1,
+        };
+        let input_2 = AddItemInput {
+            uid: Null,
+            label: "a completely different title",
+            account: Some("second@otherserver.org"),
+            last_modified_at: Utc::now(),
+            encrypted_secret: b"$#an0ther-c1pherteXt-of_diff3rent^LENGTH%",
+            kdf_salt: salt,
+            auth_nonce: nonce_2,
+        };
+
+        // We should be able to add the first item sucessfully.
+        let item = db.add_item(input_1)?;
+        assert_eq!(db.item_by_id(item.uid)?, item);
+
+        // The second item has an identical salt, so insertion must fail
+        // due to the violation of the UNIQUE constraint.
+        let error = db.add_item(input_2).expect_err("item with duplicate salt added");
+        let Error::Db(NanosqlError::Sqlite(SqliteError::SqliteFailure(error, _))) = error else {
+            panic!("unexpected error: {}", error);
+        };
+
+        assert_eq!(error.code, ErrorCode::ConstraintViolation);
+
+        Ok(())
+    }
+
+    #[test]
+    fn nonce_uniqueness_is_enforced() -> Result<()> {
+        let db = Database::open(":memory:")?;
+        let salt_1: [u8; RECOMMENDED_SALT_LEN] = *b"NdBIIex0BLnkThWH";
+        let salt_2: [u8; RECOMMENDED_SALT_LEN] = *b"xS8HYP2XAjgSnEOJ";
+        let nonce: [u8; NONCE_LEN] = *b"vb4yngPRSgEOrBLNGw8YcGpG";
+
+        let input_1 = AddItemInput {
+            uid: Null,
+            label: "Not a useful label",
+            account: Some("foo@bar.qux"),
+            last_modified_at: Utc::now(),
+            encrypted_secret: b"more stuff, I've run out of ideas",
+            kdf_salt: salt_1,
+            auth_nonce: nonce,
+        };
+        let input_2 = AddItemInput {
+            uid: Null,
+            label: "...but neither is this!",
+            account: Some("lol@wut.gov"),
+            last_modified_at: Utc::now(),
+            encrypted_secret: b"some different blob",
+            kdf_salt: salt_2,
+            auth_nonce: nonce,
+        };
+
+        // We should be able to add the first item sucessfully.
+        let item = db.add_item(input_1)?;
+        assert_eq!(db.item_by_id(item.uid)?, item);
+
+        // The second item has an identical nonce, so insertion must fail
+        // due to the violation of the UNIQUE constraint.
+        let error = db.add_item(input_2).expect_err("item with duplicate nonce added");
+        let Error::Db(NanosqlError::Sqlite(SqliteError::SqliteFailure(error, _))) = error else {
+            panic!("unexpected error: {}", error);
+        };
+
+        assert_eq!(error.code, ErrorCode::ConstraintViolation);
+
+        Ok(())
     }
 }
