@@ -30,7 +30,7 @@ impl Database {
         connection.create_table::<Item>()?;
         connection.create_table::<Metadata>()?;
 
-        let schema_version = Self::schema_version(&mut connection)?;
+        let schema_version = Self::schema_version(&connection)?;
 
         if SCHEMA_VERSION < schema_version {
             return Err(Error::SchemaVersionMismatch {
@@ -60,7 +60,7 @@ impl Database {
         if connection.insert_or_ignore_one(metadata)?.is_some() {
             Ok(SCHEMA_VERSION)
         } else {
-            Self::metadata_by_key(&connection, MetadataKey::SchemaVersion)
+            Self::metadata_by_key(connection, MetadataKey::SchemaVersion)
         }
     }
 
