@@ -6,7 +6,6 @@ use nanosql::{
     Connection, ConnectionExt, Null, Value,
     Table, Param, ResultRecord, InsertInput, AsSqlTy, FromSql, ToSql,
 };
-use nanosql::rusqlite::TransactionBehavior;
 use crate::crypto::{RECOMMENDED_SALT_LEN, NONCE_LEN};
 use crate::error::{Error, Result};
 
@@ -47,26 +46,28 @@ impl Database {
     /// If the schema version was not yet set (because the database was just created),
     /// then the schema version of the currently-running steelsafe process will be
     /// inserted (and returned).
-    fn schema_version(connection: &mut Connection) -> nanosql::Result<i64> {
+    fn schema_version(connection: &Connection) -> nanosql::Result<i64> {
         // If the schema version is not yet stored in the DB, then insert it.
         // Otherwise, leave the existing version (ignore the insertion).
-        let txn = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // We do not use a transaction, because we would need to commit the
+        // insert first in order to reliably read back the inserted value
+        // anyway. So, we just check if the insert succeeded, and if it did,
+        // simply return the current version -- this also ensures atomicity.
         let metadata = Metadata {
             key: MetadataKey::SchemaVersion,
             value: Value::Integer(SCHEMA_VERSION),
         };
+        if connection.insert_or_ignore_one(metadata)?.is_some() {
+            Ok(SCHEMA_VERSION)
+        } else {
+            Self::metadata_by_key(&connection, MetadataKey::SchemaVersion)
+        }
+    }
 
-        // If we didn't insert the version, that means we didn't create the database.
-        // In this case, we need to check the version to decide whether we can handle
-        // it. (If we did create the database, then we are convinced we can handle it.)
-        txn.insert_or_ignore_one(metadata)?;
-
-        let Metadata { ref value, .. } = txn.select_by_key(MetadataKey::SchemaVersion)?;
-        let version = <i64 as FromSql>::column_result(value.into())?;
-
-        txn.commit()?;
-
-        Ok(version)
+    fn metadata_by_key<T: FromSql>(connection: &Connection, key: MetadataKey) -> nanosql::Result<T> {
+        let Metadata { ref value, .. } = connection.select_by_key(key)?;
+        let value = T::column_result(value.into())?;
+        Ok(value)
     }
 
     /// Returns the list of items in the database.

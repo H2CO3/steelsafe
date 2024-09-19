@@ -58,7 +58,7 @@ pub enum Error {
     #[error("Password hashing error: {0}")]
     Argon2(#[from] Argon2Error),
 
-    #[error("Encryption/decryption error: {0}")]
+    #[error("Encryption, decryption, or authentication error")]
     XChaCha20Poly1305(#[from] XChaCha20Poly1305Error),
 
     #[error("Invalid padding in decrypted secret")]
