@@ -31,6 +31,9 @@ pub enum Error {
     #[error("Encryption (master) password is required and must be a single line")]
     EncryptionPasswordRequired,
 
+    #[error("Passwords do not match")]
+    ConfirmPasswordMismatch,
+
     #[error("Account name must be a single line if specified")]
     AccountNameSingleLine,
 

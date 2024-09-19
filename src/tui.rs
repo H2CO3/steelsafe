@@ -106,9 +106,10 @@ impl State {
             frame.render_widget(Clear, dialog_area);
             frame.render_widget(modal, dialog_area);
         } else if let Some(new_item) = self.new_item.as_ref() {
+            let inputs_total_height = new_item.text_areas().len() as u16 * 3;
             let margin = Margin {
                 horizontal: table_area.width.saturating_sub(72 + 2) / 2,
-                vertical: table_area.height.saturating_sub(12 + 2) / 2,
+                vertical: table_area.height.saturating_sub(inputs_total_height + 2) / 2,
             };
             let dialog_area = table_area.inner(margin);
             let outer = self.new_item_background(new_item);
@@ -120,11 +121,13 @@ impl State {
             let desc_rect = label_rect.offset(Offset { x: 0, y: 3 });
             let secret_rect = desc_rect.offset(Offset { x: 0, y: 3 });
             let passwd_rect = secret_rect.offset(Offset { x: 0, y: 3 });
+            let confirm_rect = passwd_rect.offset(Offset { x: 0, y: 3 });
 
             frame.render_widget(&new_item.label, label_rect);
             frame.render_widget(&new_item.account, desc_rect);
             frame.render_widget(&new_item.secret, secret_rect);
             frame.render_widget(&new_item.enc_pass, passwd_rect);
+            frame.render_widget(&new_item.confirm, confirm_rect);
         }
     }
 
@@ -571,6 +574,7 @@ struct NewItemState {
     account: TextArea<'static>,
     secret: TextArea<'static>,
     enc_pass: TextArea<'static>,
+    confirm: TextArea<'static>,
     focused: FocusedTextArea,
     show_secret: bool,
     show_enc_pass: bool,
@@ -584,6 +588,7 @@ impl NewItemState {
             account: TextArea::default(),
             secret: TextArea::default(),
             enc_pass: TextArea::default(),
+            confirm: TextArea::default(),
             focused: FocusedTextArea::default(),
             show_secret: false,
             show_enc_pass: false,
@@ -595,14 +600,15 @@ impl NewItemState {
         state.set_show_enc_pass(false);
 
         let props = [
-            ("Label",   true),
-            ("Account", false),
-            ("Secret (stored)",  true),
+            ("Title or label",               true),
+            ("Username or account",          false),
+            ("Secret (to be stored)",        true),
             ("Encryption (master) password", true),
+            ("Confirm master password",      true),
         ];
         let border_style = state.theme.border_highlight();
 
-        for (ta, (title, required)) in state.text_areas().zip(props) {
+        for (ta, (title, required)) in state.text_areas_mut().into_iter().zip(props) {
             ta.set_block(
                 Block::bordered()
                     .title(format!(" {title} "))
@@ -616,13 +622,24 @@ impl NewItemState {
         state
     }
 
-    fn text_areas(&mut self) -> impl Iterator<Item = &mut TextArea<'static>> {
-        IntoIterator::into_iter([
+    fn text_areas(&self) -> Vec<&TextArea<'static>> {
+        vec![
+            &self.label,
+            &self.account,
+            &self.secret,
+            &self.enc_pass,
+            &self.confirm,
+        ]
+    }
+
+    fn text_areas_mut(&mut self) -> Vec<&mut TextArea<'static>> {
+        vec![
             &mut self.label,
             &mut self.account,
             &mut self.secret,
             &mut self.enc_pass,
-        ])
+            &mut self.confirm,
+        ]
     }
 
     fn focused_text_area(&mut self) -> &mut TextArea<'static> {
@@ -631,6 +648,7 @@ impl NewItemState {
             FocusedTextArea::Account => &mut self.account,
             FocusedTextArea::Secret  => &mut self.secret,
             FocusedTextArea::EncPass => &mut self.enc_pass,
+            FocusedTextArea::Confirm => &mut self.confirm,
         }
     }
 
@@ -639,7 +657,7 @@ impl NewItemState {
 
         let highlight_style = self.theme.highlight();
 
-        for ta in self.text_areas() {
+        for ta in self.text_areas_mut() {
             if let Some(block) = ta.block() {
                 ta.set_block(block.clone().style(highlight_style));
             }
@@ -675,8 +693,10 @@ impl NewItemState {
 
         if flag {
             self.enc_pass.clear_mask_char();
+            self.confirm.clear_mask_char();
         } else {
             self.enc_pass.set_mask_char('●');
+            self.confirm.set_mask_char('●');
         }
     }
 
@@ -715,6 +735,13 @@ impl NewItemState {
             _ => return Err(Error::EncryptionPasswordRequired),
         };
 
+        let confirm_pass_lines = Zeroizing::new(self.confirm.into_lines());
+        let confirm_pass = Zeroizing::new(confirm_pass_lines.join("\n"));
+
+        if enc_pass != confirm_pass {
+            return Err(Error::ConfirmPasswordMismatch);
+        }
+
         let encryption_input = EncryptionInput {
             plaintext_secret: secret.as_bytes(),
             label,
@@ -742,6 +769,7 @@ enum FocusedTextArea {
     Account,
     Secret,
     EncPass,
+    Confirm,
 }
 
 impl FocusedTextArea {
@@ -752,7 +780,8 @@ impl FocusedTextArea {
             Label   => Account,
             Account => Secret,
             Secret  => EncPass,
-            EncPass => Label,
+            EncPass => Confirm,
+            Confirm => Label,
         }
     }
 
@@ -760,10 +789,11 @@ impl FocusedTextArea {
         use FocusedTextArea::*;
 
         match self {
-            Label   => EncPass,
+            Label   => Confirm,
             Account => Label,
             Secret  => Account,
             EncPass => Secret,
+            Confirm => EncPass,
         }
     }
 }
