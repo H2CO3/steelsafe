@@ -8,7 +8,7 @@ use nanosql::Utc;
 use zeroize::Zeroizing;
 use ratatui::{
     Frame,
-    layout::{Rect, Offset, Constraint},
+    layout::{Rect, Offset, Constraint, Margin},
     style::Modifier,
     widgets::{
         Clear, Table, TableState, Row, Paragraph,
@@ -96,42 +96,30 @@ impl State {
         frame.render_stateful_widget(table, table_area, &mut self.table_state);
 
         if let Some(error) = self.popup_error.as_ref() {
-            let mut dialog_area = table_area;
-            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
-                dialog_area.width = 72 + 2;
-                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
-            }
-            if dialog_area.height > 3 + 2 {
-                dialog_area.height = 3 + 2; // 3 for the message, +2 for the borders
-                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
-            }
-
+            let margin = Margin {
+                horizontal: table_area.width.saturating_sub(72 + 2) / 2,
+                vertical: table_area.height.saturating_sub(3 + 2) / 2,
+            };
+            let dialog_area = table_area.inner(margin);
             let modal = self.error_modal(error);
 
             frame.render_widget(Clear, dialog_area);
             frame.render_widget(modal, dialog_area);
         } else if let Some(new_item) = self.new_item.as_ref() {
-            let mut dialog_area = table_area;
-
-            if dialog_area.width > 72 + 2 { // allow 72 characters at most, +2 for the borders
-                dialog_area.width = 72 + 2;
-                dialog_area.x = table_area.x + (table_area.width - dialog_area.width) / 2;
-            }
-            if dialog_area.height > 12 + 2 {
-                dialog_area.height = 12 + 2; // 3 for each text area, +2 for the borders
-                dialog_area.y = table_area.y + (table_area.height - dialog_area.height) / 2;
-            }
-
+            let margin = Margin {
+                horizontal: table_area.width.saturating_sub(72 + 2) / 2,
+                vertical: table_area.height.saturating_sub(12 + 2) / 2,
+            };
+            let dialog_area = table_area.inner(margin);
             let outer = self.new_item_background(new_item);
+
             frame.render_widget(Clear, dialog_area);
             frame.render_widget(&outer, dialog_area);
 
-            dialog_area.width -= 2;
-
-            let label_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 1 });
-            let desc_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 4 });
-            let secret_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 7 });
-            let passwd_rect = Rect { height: 3, ..dialog_area }.offset(Offset { x: 1, y: 10 });
+            let label_rect = Rect { height: 3, ..outer.inner(dialog_area) };
+            let desc_rect = label_rect.offset(Offset { x: 0, y: 3 });
+            let secret_rect = desc_rect.offset(Offset { x: 0, y: 3 });
+            let passwd_rect = secret_rect.offset(Offset { x: 0, y: 3 });
 
             frame.render_widget(&new_item.label, label_rect);
             frame.render_widget(&new_item.account, desc_rect);
@@ -202,6 +190,7 @@ impl State {
                 if state.show_enc_pass { "Hide" } else { "Show" }
             ))
             .border_type(BorderType::Rounded)
+            .style(self.theme.border_highlight())
             .border_style(self.theme.border_highlight().add_modifier(Modifier::BOLD))
     }
 
