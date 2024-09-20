@@ -3,8 +3,12 @@ name = "steelsafe"
 version = "0.1.0"
 edition = "2021"
 authors = ["H2CO3 <arpad.goretity@gmail.com>"]
+license = "MIT"
+documentation = "https://docs.rs/steelsafe"
 categories = ["authentication", "command-line-utilities", "cryptography"]
 keywords = ["password", "password-manager", "security", "cryptography", "crypto"]
+repository = "https://github.com/H2CO3/steelsafe/"
+homepage = "https://h2co3.github.io/steelsafe/"
 
 [dependencies]
 thiserror = "1.0.63"
