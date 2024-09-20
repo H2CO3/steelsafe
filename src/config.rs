@@ -119,8 +119,8 @@ pub struct Theme {
 impl Theme {
     pub fn default(&self) -> Style {
         Style::default()
-            .bg(self.default.bg.unwrap_or(Color::Gray))
-            .fg(self.default.fg.unwrap_or(Color::Black))
+            .bg(self.default.bg.unwrap_or(Color::Black))
+            .fg(self.default.fg.unwrap_or(Color::LightYellow))
     }
 
     pub fn highlight(&self) -> Style {
@@ -131,14 +131,14 @@ impl Theme {
 
     pub fn border(&self) -> Style {
         Style::default()
-            .bg(self.border.bg.unwrap_or(Color::Gray))
-            .fg(self.border.fg.unwrap_or(Color::LightBlue))
+            .bg(self.border.bg.unwrap_or(Color::Black))
+            .fg(self.border.fg.unwrap_or(Color::LightCyan))
     }
 
     pub fn border_highlight(&self) -> Style {
         Style::default()
             .bg(self.border_highlight.bg.unwrap_or(Color::LightYellow))
-            .fg(self.border_highlight.fg.unwrap_or(Color::LightBlue))
+            .fg(self.border_highlight.fg.unwrap_or(Color::Cyan))
     }
 
     pub fn error(&self) -> Style {
