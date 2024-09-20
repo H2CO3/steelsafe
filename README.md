@@ -1,5 +1,7 @@
 ## Steelsafe: a pure Rust, safe, TUI password manager
 
+![SteelSafe screenshot](https://h2co3.github.io/steelsafe/new_item.png)
+
 Steelsafe is a minimalistic, portable, personal password manager with a terminal
 user interface (TUI), written entirely in safe Rust (not counting dependencies).
 
