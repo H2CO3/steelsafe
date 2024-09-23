@@ -9,6 +9,7 @@ use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
         terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+        event::{EnableMouseCapture, DisableMouseCapture},
         ExecutableCommand,
     },
 };
@@ -43,6 +44,11 @@ impl ScreenGuard {
                 return None;
             }
 
+            if let Err(error) = io::stdout().execute(EnableMouseCapture) {
+                result = Err(error.into());
+                return None;
+            }
+
             match Terminal::new(CrosstermBackend::new(io::stdout())) {
                 Ok(terminal) => {
                     result = Ok(ScreenGuard { terminal });
@@ -66,6 +72,7 @@ impl ScreenGuard {
 
     fn finalize(&mut self) -> Result<()> {
         terminal::disable_raw_mode()?;
+        io::stdout().execute(DisableMouseCapture)?;
         io::stdout().execute(LeaveAlternateScreen)?;
         IS_OPEN.store(false, Ordering::SeqCst);
         Ok(())

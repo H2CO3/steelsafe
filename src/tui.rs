@@ -14,7 +14,7 @@ use ratatui::{
         Clear, Table, TableState, Row, Paragraph,
         block::{Block, BorderType},
     },
-    crossterm::event::{self, Event, KeyEventKind, KeyCode, KeyModifiers},
+    crossterm::event::{self, Event, KeyEventKind, KeyCode, KeyModifiers, MouseEventKind},
 };
 use tui_textarea::TextArea;
 use arboard::Clipboard;
@@ -233,6 +233,19 @@ impl State {
 
     /// Handles events when the main table has focus.
     fn handle_main_table_event(&mut self, event: Event) -> Result<()> {
+        if let Event::Mouse(mouse) = event {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    self.table_state.select_next();
+                }
+                MouseEventKind::ScrollUp => {
+                    self.table_state.select_previous();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         let Event::Key(key) = event else {
             return Ok(());
         };
