@@ -57,6 +57,12 @@ Of course, this approach has its downsides. For example:
 These make Steelsafe largely unsuited for corporate use, but we believe that it will
 still make a fine addition to the power user's toolbox.
 
+### Disclaimer
+
+This software has **NOT** yet been formally audited by a security expert. If you are
+in infosec/pentesting/verification, and you are willing to take a look, please contact
+me.
+
 ### Installation
 
 You'll need the [Rust toolchain][4], then simply:
