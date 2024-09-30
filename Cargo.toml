@@ -26,3 +26,6 @@ nanosql = { version = "0.9.1", features = ["chrono"] }
 ratatui = { version = "0.28.1", features = ["serde"] }
 tui-textarea = "0.6.1"
 arboard = "3.4.1"
+
+[dev-dependencies]
+zxcvbn = "3.1.0"

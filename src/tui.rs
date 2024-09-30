@@ -9,6 +9,7 @@ use zeroize::Zeroizing;
 use ratatui::{
     Frame,
     layout::{Rect, Offset, Constraint, Margin},
+    text::Line,
     style::Modifier,
     widgets::{
         Clear, Table, TableState, Row, Paragraph,
@@ -182,6 +183,7 @@ impl State {
     fn new_item_background(&self, state: &NewItemState) -> Block<'static> {
         Block::bordered()
             .title(" New secret item ")
+            .title_top(Line::from(" <^G> Generate password ").right_aligned())
             .title_bottom(" <Enter> Save ")
             .title_bottom(" <Esc> Cancel ")
             .title_bottom(format!(
@@ -404,6 +406,9 @@ impl State {
                 }
                 KeyCode::Char('e' | 'E') if evt.modifiers.contains(KeyModifiers::CONTROL) => {
                     new_item.toggle_show_enc_pass();
+                }
+                KeyCode::Char('g' | 'G') if evt.modifiers.contains(KeyModifiers::CONTROL) => {
+                    new_item.generate_random_password();
                 }
                 _ => {
                     new_item.focused_text_area().input(event);
@@ -719,6 +724,12 @@ impl NewItemState {
 
     fn toggle_show_enc_pass(&mut self) {
         self.set_show_enc_pass(!self.show_enc_pass);
+    }
+
+    fn generate_random_password(&mut self) {
+        let password = crate::crypto::generate_password();
+        self.secret.select_all();
+        self.secret.insert_str(password.as_str());
     }
 
     fn add_item(self, db: &Database) -> Result<Item> {
