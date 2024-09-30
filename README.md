@@ -113,6 +113,11 @@ The credential to be encrypted may contain multiple lines, while the master encr
 
 Use the up/down arrow keys or `<TAB>` to cycle through the text fields.
 
+Use `<Ctrl>+G` to randomly generate a strong, unpredictable, high-entropy password in the
+"secret" field. The generated password will have sufficient length and an appropriate variety
+of characters (including lowercase and uppercase ASCII letters, the digits 0-9, and easily
+accessible punctuation/symbols), which should satisfy even the most paranoid requirements.
+
 Press `<ENTER>` to confirm the operation and add the entry, `<ESC>` to cancel and close the
 dialog box, and `<CTRL>+H` or `<CTRL>+E` to show/hide the credential and the master password,
 respectively. Once the new entry is added, it appears at the end of the table immediately, and
