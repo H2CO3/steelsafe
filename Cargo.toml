@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["H2CO3 <arpad.goretity@gmail.com>"]
 license = "MIT"
+description = "Simple, personal TUI password manager"
 documentation = "https://docs.rs/steelsafe"
 categories = ["authentication", "command-line-utilities", "cryptography"]
 keywords = ["password", "password-manager", "security", "cryptography", "crypto"]
