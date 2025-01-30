@@ -180,7 +180,7 @@ impl DecryptionInput<'_> {
 
 /// Randomly generates a cryptographically strong (unpredictable) password.
 pub fn generate_password() -> Zeroizing<String> {
-    // `thread_rng()` returns a CSPRNG.
+    // `rng()` returns a CSPRNG.
     let mut rng = rand::rng();
 
     iter::from_fn(|| PASSWORD_CHARSET.choose(&mut rng))
@@ -194,7 +194,7 @@ pub fn generate_password() -> Zeroizing<String> {
 #[cfg(test)]
 mod tests {
     use chrono::{Utc, Days};
-    use rand::{Rng, RngCore, distributions::{Standard, DistString}};
+    use rand::{Rng, RngCore, distr::{StandardUniform, SampleString}};
     use zxcvbn::{zxcvbn, Score};
     use crate::error::{Error, Result};
     use super::{EncryptionInput, DecryptionInput, PADDING_BLOCK_SIZE, PASSWORD_LEN};
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn correct_encryption_and_decryption_succeeds() -> Result<()> {
         let timestamp = Utc::now();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let p0 = vec![]; // empty payload edge case
         let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
         let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
@@ -214,8 +214,8 @@ mod tests {
         rng.fill_bytes(&mut p3);
 
         for payload in [p0, p1, p2, p3] {
-            let password_len: usize = rng.gen_range(8..64);
-            let password = Standard.sample_string(&mut rng, password_len);
+            let password_len: usize = rng.random_range(8..64);
+            let password = StandardUniform.sample_string(&mut rng, password_len);
             let encryption_input = EncryptionInput {
                 plaintext_secret: payload.as_slice(),
                 label: "the precise label does not matter",
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn incorrect_password_fails_decryption() -> Result<()> {
         let timestamp = Utc::now();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let p0 = vec![]; // empty payload edge case
         let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
         let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
@@ -254,8 +254,8 @@ mod tests {
         rng.fill_bytes(&mut p3);
 
         for payload in [p0, p1, p2, p3] {
-            let password_len: usize = rng.gen_range(8..64);
-            let password = Standard.sample_string(&mut rng, password_len);
+            let password_len: usize = rng.random_range(8..64);
+            let password = StandardUniform.sample_string(&mut rng, password_len);
             let encryption_input = EncryptionInput {
                 plaintext_secret: payload.as_slice(),
                 label: "the precise label does not matter",
@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn altered_additional_data_fails_verification() -> Result<()> {
         let timestamp = Utc::now();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let p0 = vec![]; // empty payload edge case
         let mut p1 = vec![0_u8; PADDING_BLOCK_SIZE - 1];
         let mut p2 = vec![0_u8; PADDING_BLOCK_SIZE];
@@ -303,8 +303,8 @@ mod tests {
         rng.fill_bytes(&mut p3);
 
         for payload in [p0, p1, p2, p3] {
-            let password_len: usize = rng.gen_range(8..64);
-            let password = Standard.sample_string(&mut rng, password_len);
+            let password_len: usize = rng.random_range(8..64);
+            let password = StandardUniform.sample_string(&mut rng, password_len);
             let encryption_input = EncryptionInput {
                 plaintext_secret: payload.as_slice(),
                 label: "the precise label does not matter",
