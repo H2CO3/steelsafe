@@ -1,6 +1,6 @@
 [package]
 name = "steelsafe"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["H2CO3 <arpad.goretity@gmail.com>"]
 license = "MIT"
@@ -12,20 +12,20 @@ repository = "https://github.com/H2CO3/steelsafe/"
 homepage = "https://h2co3.github.io/steelsafe/"
 
 [dependencies]
-thiserror = "1.0.63"
+thiserror = "2.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 chrono = { version = "0.4.38", features = ["serde"] }
-directories = "5.0.1"
-rand = "0.8.5"
+directories = "6.0"
+rand = "0.9"
 zeroize = "1.8.1"
 block-padding = { version = "0.3.3", features = ["std"] }
 crypto-common = { version = "0.1.6", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize", "std"] }
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
-nanosql = { version = "0.9.1", features = ["chrono"] }
-ratatui = { version = "0.28.1", features = ["serde"] }
-tui-textarea = "0.6.1"
+nanosql = { version = "0.10.0", features = ["chrono"] }
+ratatui = { version = "0.29", features = ["serde"] }
+tui-textarea = "0.7"
 arboard = "3.4.1"
 
 [dev-dependencies]

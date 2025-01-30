@@ -3,7 +3,7 @@
 use std::iter;
 use serde::Serialize;
 use chrono::{DateTime, Utc};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use zeroize::Zeroizing;
 use block_padding::{RawPadding, Iso7816};
 use crypto_common::typenum::Unsigned;
@@ -181,7 +181,7 @@ impl DecryptionInput<'_> {
 /// Randomly generates a cryptographically strong (unpredictable) password.
 pub fn generate_password() -> Zeroizing<String> {
     // `thread_rng()` returns a CSPRNG.
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     iter::from_fn(|| PASSWORD_CHARSET.choose(&mut rng))
         .copied()

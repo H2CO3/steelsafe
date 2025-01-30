@@ -145,7 +145,7 @@ impl State {
         ).header(
             Row::new(["Title", "Username or account", "Modified at (UTC)"])
                 .style(self.theme.default().add_modifier(Modifier::BOLD))
-        ).highlight_style(
+        ).row_highlight_style(
             Modifier::REVERSED
         ).block(
             Block::bordered()
