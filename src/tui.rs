@@ -37,6 +37,7 @@ pub struct State {
     passwd_entry: Option<PasswordEntryState>,
     find: Option<FindItemState>,
     new_item: Option<NewItemState>,
+    delete_item: Option<DeleteItemState>,
     popup_error: Option<Error>,
     items: Vec<DisplayItem>,
     table_state: TableState,
@@ -58,6 +59,7 @@ impl State {
             passwd_entry: None,
             find: None,
             new_item: None,
+            delete_item: None,
             popup_error: None,
             items,
             table_state,
@@ -129,6 +131,16 @@ impl State {
             frame.render_widget(&new_item.secret, secret_rect);
             frame.render_widget(&new_item.enc_pass, passwd_rect);
             frame.render_widget(&new_item.confirm, confirm_rect);
+        } else if let Some(delete_item) = self.delete_item.as_ref() {
+            let margin = Margin {
+                horizontal: table_area.width.saturating_sub(72 + 2) / 2,
+                vertical: table_area.height.saturating_sub(3 + 2) / 2,
+            };
+            let dialog_area = table_area.inner(margin);
+            let modal = self.delete_confirmation_modal(delete_item);
+
+            frame.render_widget(Clear, dialog_area);
+            frame.render_widget(modal, dialog_area);
         }
     }
 
@@ -180,6 +192,26 @@ impl State {
             .style(self.theme.error())
     }
 
+    fn delete_confirmation_modal(&self, state: &DeleteItemState) -> Paragraph<'static> {
+        let DeleteItemState { uid: _, label, account, theme: _ } = state;
+        let block = Block::bordered()
+            .title(" Confirm Deletion ")
+            .title_bottom(" <Esc> Cancel ")
+            .title_bottom(" <Enter> Delete ")
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.highlight().add_modifier(Modifier::BOLD));
+
+        let account_suffix = account.as_ref().map_or_else(
+            String::new,
+            |account| format!(" for account `{account}`")
+        );
+
+        Paragraph::new(format!("\nDelete item `{label}`{account_suffix}?\n"))
+            .centered()
+            .block(block)
+            .style(self.theme.highlight())
+    }
+
     fn new_item_background(&self, state: &NewItemState) -> Block<'static> {
         Block::bordered()
             .title(" New secret item ")
@@ -226,6 +258,10 @@ impl State {
             ControlFlow::Continue(event) => event,
         };
         let event = match self.handle_new_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
+            ControlFlow::Continue(event) => event,
+        };
+        let event = match self.handle_delete_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
@@ -283,6 +319,17 @@ impl State {
             }
             KeyCode::Char('n' | 'N') => {
                 self.new_item = Some(NewItemState::with_theme(self.theme.clone()));
+            }
+            KeyCode::Char('d' | 'D') => {
+                self.delete_item = self.table_state.selected().map(|index| {
+                    let item = &self.items[index];
+                    DeleteItemState {
+                        uid: item.uid,
+                        label: item.label.clone(),
+                        account: item.account.clone(),
+                        theme: self.theme.clone(),
+                    }
+                });
             }
             KeyCode::Char('q' | 'Q') => {
                 self.is_running = false;
@@ -416,6 +463,32 @@ impl State {
             },
             _ => {
                 new_item.focused_text_area().input(event);
+            }
+        }
+
+        Ok(ControlFlow::Break(()))
+    }
+
+    fn handle_delete_input(&mut self, event: Event) -> Result<ControlFlow<(), Event>> {
+        // if the delete dialog box is not open, ignore the event and give it back right away
+        let Some(state) = self.delete_item.as_mut() else {
+            return Ok(ControlFlow::Continue(event));
+        };
+
+        if let Event::Key(evt) = event {
+            match evt.code {
+                KeyCode::Esc => {
+                    self.delete_item = None;
+                }
+                KeyCode::Enter => {
+                    // close dialog even if an error occurred
+                    let id = state.uid;
+                    self.delete_item = None;
+
+                    self.db.delete_item(id)?;
+                    self.sync_data(true)?;
+                }
+                _ => {}
             }
         }
 
@@ -820,6 +893,14 @@ impl FocusedTextArea {
             Confirm => EncPass,
         }
     }
+}
+
+#[derive(Debug)]
+struct DeleteItemState {
+    uid: u64,
+    label: String,
+    account: Option<String>,
+    theme: Theme,
 }
 
 /// The sole purpose of this is to implement `Debug` so that it doesn't break literally everything.

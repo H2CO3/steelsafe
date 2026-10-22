@@ -98,6 +98,10 @@ impl Database {
     pub fn item_by_id(&self, id: u64) -> Result<Item> {
         self.connection.select_by_key(id).map_err(Into::into)
     }
+
+    pub fn delete_item(&self, id: u64) -> Result<Option<Item>> {
+        self.connection.delete_by_key(id).map_err(Into::into)
+    }
 }
 
 /// Describes a secret item.
