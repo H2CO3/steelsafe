@@ -96,6 +96,7 @@ basic features:
 * `c`, `<ENTER>`: Ask for decryption password and copy cleartext secret to clipboard
 * `f`, `/`: Find secret by metadata (label or account)
 * `n`: Add new secret entry
+* `d`: Delete existing entry after confirmation
 
 #### Adding a new entry
 
