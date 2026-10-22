@@ -5,7 +5,7 @@ use serde::Serialize;
 use chrono::{DateTime, Utc};
 use rand::seq::IndexedRandom;
 use zeroize::Zeroizing;
-use block_padding::{RawPadding, Iso7816};
+use block_padding::{Padding, Iso7816};
 use crypto_common::typenum::Unsigned;
 use argon2::Argon2;
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload, KeySizeUser}};
@@ -194,7 +194,7 @@ pub fn generate_password() -> Zeroizing<String> {
 #[cfg(test)]
 mod tests {
     use chrono::{Utc, Days};
-    use rand::{Rng, RngCore, distr::{StandardUniform, SampleString}};
+    use rand::{Rng, RngExt, distr::{StandardUniform, SampleString}};
     use zxcvbn::{zxcvbn, Score};
     use crate::error::{Error, Result};
     use super::{EncryptionInput, DecryptionInput, PADDING_BLOCK_SIZE, PASSWORD_LEN};

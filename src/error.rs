@@ -8,7 +8,7 @@ use thiserror::Error;
 use serde_json::Error as JsonError;
 use argon2::Error as Argon2Error;
 use chacha20poly1305::Error as XChaCha20Poly1305Error;
-use block_padding::UnpadError;
+use block_padding::Error as UnpadError;
 use crypto_common::InvalidLength;
 use arboard::Error as ClipboardError;
 use nanosql::Error as SqlError;
