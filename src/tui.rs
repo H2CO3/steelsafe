@@ -167,6 +167,7 @@ impl State {
                 .title_bottom(" [1] First ")
                 .title_bottom(" [0] Last ")
                 .title_bottom(" [N]ew item ")
+                .title_bottom(" [D]elete ")
                 .title_bottom(" [Q]uit ")
                 .border_type(BorderType::Rounded)
                 .border_style(if self.main_table_has_focus() {
@@ -199,14 +200,14 @@ impl State {
             .title_bottom(" <Esc> Cancel ")
             .title_bottom(" <Enter> Delete ")
             .border_type(BorderType::Rounded)
-            .border_style(self.theme.highlight().add_modifier(Modifier::BOLD));
+            .border_style(state.theme.highlight().add_modifier(Modifier::BOLD));
 
         let account_suffix = account.as_ref().map_or_else(
             String::new,
-            |account| format!(" for account `{account}`")
+            |account| format!("\n(account: `{account}`)")
         );
 
-        Paragraph::new(format!("\nDelete item `{label}`{account_suffix}?\n"))
+        Paragraph::new(format!("\nDelete item `{label}`?{account_suffix}"))
             .centered()
             .block(block)
             .style(self.theme.highlight())
@@ -245,6 +246,7 @@ impl State {
         }
         let event = event::read()?;
 
+        // handle errors before and above anything else
         let event = match self.handle_error_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
@@ -253,15 +255,20 @@ impl State {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
+
+        // handling delete must come before search, because we want
+        // escape to close/cancel the delete dialog even if search
+        // is currently active (in which case we want it to remain
+        // active).
+        let event = match self.handle_delete_input(event)? {
+            ControlFlow::Break(()) => return Ok(()),
+            ControlFlow::Continue(event) => event,
+        };
         let event = match self.handle_find_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
         let event = match self.handle_new_input(event)? {
-            ControlFlow::Break(()) => return Ok(()),
-            ControlFlow::Continue(event) => event,
-        };
-        let event = match self.handle_delete_input(event)? {
             ControlFlow::Break(()) => return Ok(()),
             ControlFlow::Continue(event) => event,
         };
